@@ -1,15 +1,15 @@
 name = "json"
-description = "An Ada 2012 library for parsing JSON"
-version = "6.0.0"
-website = "https://github.com/onox/json-ada"
+description = "A SPARK JSON parser proved to Silver (fork of onox/json-ada)"
+version = "7.1.0"
+website = "https://github.com/manthonyaiello/json-spark"
 licenses = "Apache-2.0"
-tags = ["json"]
+tags = ["json", "spark"]
 
 project-files = ["json.gpr"]
 
 authors = ["onox"]
-maintainers = ["onox <denkpadje@gmail.com>"]
-maintainers-logins = ["onox"]
+maintainers = ["M. Anthony Aiello <m.anthony.aiello@gmail.com>"]
+maintainers-logins = ["manthonyaiello"]
 
 [build-switches]
 validation.compile_checks = "warnings"

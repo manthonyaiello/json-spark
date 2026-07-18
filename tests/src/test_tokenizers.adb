@@ -29,8 +29,6 @@ package body Test_Tokenizers is
    package Tokenizers is new JSON.Tokenizers (Types);
    package Streams renames JSON.Streams;
 
-   use type JSON.Streams.AS.Stream_Element_Offset;
-
    String_Offset_Message : constant String := "String value at wrong offset";
    String_Length_Message : constant String := "String value has incorrect length";
 
@@ -61,6 +59,15 @@ package body Test_Tokenizers is
       Test_Suite.Add_Test (Caller.Create
         (Name & "Tokenize text '""foo\""\\bar""'",
          Test_Escaped_Quotation_Solidus_String_Token'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Tokenize text '""escaped\u001b""'",
+         Test_Escaped_Unicode_String_Token'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Tokenize text '""\u00E9""'",
+         Test_Escaped_Unicode_Uppercase_String_Token'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Tokenize text '""\ud834\udd1e""'",
+         Test_Escaped_Unicode_Surrogate_Pair_String_Token'Access));
       Test_Suite.Add_Test (Caller.Create
         (Name & "Tokenize text '0'", Test_Zero_Number_Token'Access));
       Test_Suite.Add_Test (Caller.Create
@@ -96,6 +103,24 @@ package body Test_Tokenizers is
       Test_Suite.Add_Test (Caller.Create
         (Name & "Reject text '""unexpected\xcharacter""'",
          Test_Unexpected_Escaped_Character_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\u12""'",
+         Test_Truncated_Escaped_Unicode_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\uzzzz""'",
+         Test_Non_Hex_Escaped_Unicode_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\ud834""'",
+         Test_Lone_High_Surrogate_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\udd1e""'",
+         Test_Lone_Low_Surrogate_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\ud834A""'",
+         Test_High_Surrogate_Without_Low_String_Exception'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Reject text '""\ud834\t""'",
+         Test_High_Surrogate_Wrong_Escape_String_Exception'Access));
       Test_Suite.Add_Test (Caller.Create
         (Name & "Reject text '-'", Test_Minus_Number_EOF_Exception'Access));
       Test_Suite.Add_Test (Caller.Create
@@ -142,7 +167,7 @@ package body Test_Tokenizers is
       Assert (False, Message);
    end Fail;
 
-   procedure Expect_EOF (Stream : aliased in out Streams.Stream) is
+   procedure Expect_EOF (Stream : in out Streams.Stream) is
       Token : Tokenizers.Token;
    begin
       Tokenizers.Read_Token (Stream, Token, Expect_EOF => True);
@@ -154,193 +179,268 @@ package body Test_Tokenizers is
    --  Keyword
    procedure Test_Null_Token (Object : in out Test) is
       Text : constant String := "null";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Null_Token, "Not Null_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Null_Token;
 
    procedure Test_True_Token (Object : in out Test) is
       Text : constant String := "true";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Boolean_Token, "Not Boolean_Token");
       Assert (Token.Boolean_Value, "Boolean value not True");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_True_Token;
 
    procedure Test_False_Token (Object : in out Test) is
       Text : constant String := "false";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Boolean_Token, "Not Boolean_Token");
       Assert (not Token.Boolean_Value, "Boolean value not False");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_False_Token;
 
    --  String
    procedure Test_Empty_String_Token (Object : in out Test) is
       Text : constant String := """""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
       Assert (Token.String_Offset = 2, String_Offset_Message);
       Assert (Token.String_Length = 0, String_Length_Message);
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Empty_String_Token;
 
    procedure Test_Non_Empty_String_Token (Object : in out Test) is
       Text : constant String := """test""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
       Assert (Token.String_Offset = 2, String_Offset_Message);
       Assert (Token.String_Length = 4, String_Length_Message);
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Non_Empty_String_Token;
 
    procedure Test_Number_String_Token (Object : in out Test) is
       Text : constant String := """12.34""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
       Assert (Token.String_Offset = 2, String_Offset_Message);
       Assert (Token.String_Length = 5, String_Length_Message);
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Number_String_Token;
 
    procedure Test_Escaped_Character_String_Token (Object : in out Test) is
       Text : constant String := """horizontal\ttab""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
       Assert (Token.String_Offset = 2, String_Offset_Message);
       Assert (Token.String_Length = 15, String_Length_Message);
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Escaped_Character_String_Token;
 
    procedure Test_Escaped_Quotation_Solidus_String_Token (Object : in out Test) is
       Text : constant String := """foo\""\\bar""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
       Assert (Token.String_Offset = 2, String_Offset_Message);
       Assert (Token.String_Length = 10, String_Length_Message);
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Escaped_Quotation_Solidus_String_Token;
+
+   procedure Test_Escaped_Unicode_String_Token (Object : in out Test) is
+      Text : constant String := """escaped\u001b""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
+      Assert (Token.String_Offset = 2, String_Offset_Message);
+      Assert (Token.String_Length = 13, String_Length_Message);
+      Expect_EOF (Stream);
+      Streams.Destroy (Stream);
+   end Test_Escaped_Unicode_String_Token;
+
+   procedure Test_Escaped_Unicode_Uppercase_String_Token (Object : in out Test) is
+      Text : constant String := """\u00E9""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
+      Assert (Token.String_Offset = 2, String_Offset_Message);
+      Assert (Token.String_Length = 6, String_Length_Message);
+      Expect_EOF (Stream);
+      Streams.Destroy (Stream);
+   end Test_Escaped_Unicode_Uppercase_String_Token;
+
+   procedure Test_Escaped_Unicode_Surrogate_Pair_String_Token (Object : in out Test) is
+      Text : constant String := """\ud834\udd1e""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Assert_Kind (Token.Kind, Tokenizers.String_Token, "Not String_Token");
+      Assert (Token.String_Offset = 2, String_Offset_Message);
+      Assert (Token.String_Length = 12, String_Length_Message);
+      Expect_EOF (Stream);
+      Streams.Destroy (Stream);
+   end Test_Escaped_Unicode_Surrogate_Pair_String_Token;
 
    --  Integer/Float number
    procedure Test_Zero_Number_Token (Object : in out Test) is
       Text : constant String := "0";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Integer_Token, "Not Integer_Token");
       Assert (Token.Integer_Value = 0, "Integer value not equal to 0");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Zero_Number_Token;
 
    procedure Test_Integer_Number_Token (Object : in out Test) is
       Text : constant String := "42";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Integer_Token, "Not Integer_Token");
       Assert (Token.Integer_Value = 42, "Integer value not equal to 42");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Integer_Number_Token;
 
    procedure Test_Float_Number_Token (Object : in out Test) is
       Text : constant String := "3.14";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Float_Token, "Not Float_Token");
       Assert (Token.Float_Value = 3.14, "Float value not equal to 3.14");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Float_Number_Token;
 
    procedure Test_Negative_Float_Number_Token (Object : in out Test) is
       Text : constant String := "-2.71";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Float_Token, "Not Float_Token");
       Assert (Token.Float_Value = -2.71, "Float value not equal to -2.71");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Negative_Float_Number_Token;
 
    procedure Test_Integer_Exponent_Number_Token (Object : in out Test) is
       Text : constant String := "4e2";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Integer_Token, "Not Integer_Token");
       Assert (Token.Integer_Value = 400, "Integer value not equal to 400");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Integer_Exponent_Number_Token;
 
    procedure Test_Float_Exponent_Number_Token (Object : in out Test) is
       Text : constant String := "0.314e1";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Float_Token, "Not Float_Token");
       Assert (Token.Float_Value = 3.14, "Float value not equal to 3.14");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Float_Exponent_Number_Token;
 
    procedure Test_Float_Negative_Exponent_Number_Token (Object : in out Test) is
       Text : constant String := "4e-1";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Float_Token, "Not Float_Token");
       Assert (Token.Float_Value = 0.4, "Float value not equal to 0.4");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Float_Negative_Exponent_Number_Token;
 
    --  Array
    procedure Test_Empty_Array_Tokens (Object : in out Test) is
       Text : constant String := "[]";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Array_Token, "Not Begin_Array_Token");
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Array_Token, "Not End_Array_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Empty_Array_Tokens;
 
    procedure Test_One_Element_Array_Tokens (Object : in out Test) is
       Text : constant String := "[null]";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Array_Token, "Not Begin_Array_Token");
 
@@ -351,13 +451,15 @@ package body Test_Tokenizers is
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Array_Token, "Not End_Array_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_One_Element_Array_Tokens;
 
    procedure Test_Two_Elements_Array_Tokens (Object : in out Test) is
       Text : constant String := "[1,2]";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Array_Token, "Not Begin_Array_Token");
 
@@ -378,26 +480,30 @@ package body Test_Tokenizers is
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Array_Token, "Not End_Array_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Two_Elements_Array_Tokens;
 
    --  Object
    procedure Test_Empty_Object_Tokens (Object : in out Test) is
       Text : constant String := "{}";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Object_Token, "Not Begin_Object_Token");
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Object_Token, "Not End_Object_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Empty_Object_Tokens;
 
    procedure Test_One_Pair_Object_Tokens (Object : in out Test) is
       Text : constant String := "{""foo"":""bar""}";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Object_Token, "Not Begin_Object_Token");
 
@@ -420,13 +526,15 @@ package body Test_Tokenizers is
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Object_Token, "Not End_Object_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_One_Pair_Object_Tokens;
 
    procedure Test_Two_Pairs_Object_Tokens (Object : in out Test) is
       Text : constant String := "{""foo"":true,""bar"":false}";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.Begin_Object_Token, "Not Begin_Object_Token");
 
@@ -467,212 +575,308 @@ package body Test_Tokenizers is
       Tokenizers.Read_Token (Stream, Token);
       Assert_Kind (Token.Kind, Tokenizers.End_Object_Token, "Not End_Object_Token");
       Expect_EOF (Stream);
+      Streams.Destroy (Stream);
    end Test_Two_Pairs_Object_Tokens;
 
    --  Exceptions
    procedure Test_Control_Character_String_Exception (Object : in out Test) is
       LF : Character renames Ada.Characters.Latin_1.LF;
       Text : constant String := """no" & LF & "newline""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Control_Character_String_Exception;
 
    procedure Test_Unexpected_Escaped_Character_String_Exception (Object : in out Test) is
       Text : constant String := """unexpected\xcharacter""";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Unexpected_Escaped_Character_String_Exception;
+
+   procedure Test_Truncated_Escaped_Unicode_String_Exception (Object : in out Test) is
+      Text : constant String := """\u12""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_Truncated_Escaped_Unicode_String_Exception;
+
+   procedure Test_Non_Hex_Escaped_Unicode_String_Exception (Object : in out Test) is
+      Text : constant String := """\uzzzz""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_Non_Hex_Escaped_Unicode_String_Exception;
+
+   procedure Test_Lone_High_Surrogate_String_Exception (Object : in out Test) is
+      Text : constant String := """\ud834""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_Lone_High_Surrogate_String_Exception;
+
+   procedure Test_Lone_Low_Surrogate_String_Exception (Object : in out Test) is
+      Text : constant String := """\udd1e""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_Lone_Low_Surrogate_String_Exception;
+
+   procedure Test_High_Surrogate_Without_Low_String_Exception (Object : in out Test) is
+      Text : constant String := """\ud834\u0041""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_High_Surrogate_Without_Low_String_Exception;
+
+   procedure Test_High_Surrogate_Wrong_Escape_String_Exception (Object : in out Test) is
+      Text : constant String := """\ud834\t""";
+      Stream : Streams.Stream;
+      Token : Tokenizers.Token;
+   begin
+      Streams.From_Text (Stream, Text);
+      Tokenizers.Read_Token (Stream, Token);
+      Fail ("Expected Tokenizer_Error");
+   exception
+      when Tokenizers.Tokenizer_Error =>
+         Streams.Destroy (Stream);
+   end Test_High_Surrogate_Wrong_Escape_String_Exception;
 
    procedure Test_Minus_Number_EOF_Exception (Object : in out Test) is
       Text : constant String := "-";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Minus_Number_EOF_Exception;
 
    procedure Test_Minus_Number_Exception (Object : in out Test) is
       Text : constant String := "-,";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Minus_Number_Exception;
 
    procedure Test_End_Dot_Number_Exception (Object : in out Test) is
       Text : constant String := "3.";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Dot_Number_Exception;
 
    procedure Test_End_Exponent_Number_Exception (Object : in out Test) is
       Text : constant String := "1E";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Exponent_Number_Exception;
 
    procedure Test_End_Dot_Exponent_Number_Exception (Object : in out Test) is
       Text : constant String := "1.E";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Dot_Exponent_Number_Exception;
 
    procedure Test_End_Exponent_Minus_Number_Exception (Object : in out Test) is
       Text : constant String := "1E-";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Exponent_Minus_Number_Exception;
 
    procedure Test_End_Exponent_One_Digit_Exception (Object : in out Test) is
       Text : constant String := "1E,";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Exponent_One_Digit_Exception;
 
    procedure Test_End_Exponent_Minus_One_Digit_Exception (Object : in out Test) is
       Text : constant String := "1E-,";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_End_Exponent_Minus_One_Digit_Exception;
 
    procedure Test_Prefixed_Plus_Number_Exception (Object : in out Test) is
       Text : constant String := "+42";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Prefixed_Plus_Number_Exception;
 
    procedure Test_Leading_Zeroes_Integer_Number_Exception (Object : in out Test) is
       Text : constant String := "-02";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Leading_Zeroes_Integer_Number_Exception;
 
    procedure Test_Leading_Zeroes_Float_Number_Exception (Object : in out Test) is
       Text : constant String := "-003.14";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Leading_Zeroes_Float_Number_Exception;
 
    procedure Test_Incomplete_True_Text_Exception (Object : in out Test) is
       Text : constant String := "tr";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Incomplete_True_Text_Exception;
 
    procedure Test_Incomplete_False_Text_Exception (Object : in out Test) is
       Text : constant String := "f";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Incomplete_False_Text_Exception;
 
    procedure Test_Incomplete_Null_Text_Exception (Object : in out Test) is
       Text : constant String := "nul";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Incomplete_Null_Text_Exception;
 
    procedure Test_Unknown_Keyword_Text_Exception (Object : in out Test) is
       Text : constant String := "unexpected";
-      Stream : aliased Streams.Stream := Streams.Create_Stream (Streams.From_Text (Text));
+      Stream : Streams.Stream;
       Token : Tokenizers.Token;
    begin
+      Streams.From_Text (Stream, Text);
       Tokenizers.Read_Token (Stream, Token);
       Fail ("Expected Tokenizer_Error");
    exception
       when Tokenizers.Tokenizer_Error =>
-         null;
+         Streams.Destroy (Stream);
    end Test_Unknown_Keyword_Text_Exception;
 
 end Test_Tokenizers;

@@ -1,0 +1,70 @@
+name: CI
+
+# Build, test, and prove the json crate on every push to master and every PR.
+# Doc-only changes are skipped.
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+# Cancel an in-flight run when a new commit lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-prove:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # setup-alire installs alr plus the requested GNAT + gprbuild toolchain.
+      # Pin Alire 2.x: the older setup-alire@v2 default (alr 1.2.2) predates the
+      # `alr install` command and only resolves a 13.x toolchain from its index.
+      # Pin gnat_native to the 15 series so the compiler matches GNATprove 15.
+      - name: Install Alire
+        uses: alire-project/setup-alire@v6.0.0
+        with:
+          version: 2.1.1
+          toolchain: gnat_native=15.3.1 gprbuild
+
+      # GNATprove is a standalone tool (not part of the toolchain and not a
+      # solution dependency). Install 15.x into ~/.alire and put it on PATH so
+      # `alr exec -- gnatprove` finds it.
+      - name: Install GNATprove
+        run: |
+          alr -n install gnatprove^15
+          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: make build
+
+      # Compile the Ada example from the README against the library so the
+      # documented snippet can't rot out of sync with the API.
+      - name: Check README example
+        run: make check-readme
+
+      - name: Test
+        run: make tests
+
+      # Prove to Silver and gate on the expected-failure baseline: fails on any
+      # unproved check outside scripts/proof-xfail.txt (empty — json proves fully).
+      #
+      # Local dev proves at the default --level=2 (see the Makefile). Here we add
+      # --timeout=10 via GNATPROVE_EXTRA: --level timeouts are wall-clock rather
+      # than step-bounded, so a couple of sticky floating-point checks in
+      # Scan_Number that discharge on a fast dev machine can time out on the
+      # slower GitHub runner. The extra wall-clock removes that flakiness without
+      # weakening the proof level.
+      - name: Prove
+        env:
+          GNATPROVE_EXTRA: --timeout=10
+        run: make prove-check

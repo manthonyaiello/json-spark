@@ -45,11 +45,17 @@ package body Test_Streams is
    procedure Test_Stream_IO (Object : in out Test) is
       File_Name : constant String := "float_number.txt";
 
-      Parser : Parsers.Parser := Parsers.Create_From_File (File_Name);
-      Value  : constant JSON_Value := Parser.Parse;
+      Parser   : Parsers.Parser;
+      Document : aliased JSON_Value_Access;
    begin
-      Assert (Value.Kind = Float_Kind, "Not a float");
-      Assert (Value.Value = 3.14, "Expected float value to be equal to 3.14");
+      Parsers.Create_From_File (Parser, File_Name);
+      Parsers.Parse (Parser, Document);
+
+      Assert (Kind (Document) = Float_Kind, "Not a float");
+      Assert (Value (Document) = 3.14, "Expected float value to be equal to 3.14");
+
+      Free (Document);
+      Parsers.Destroy (Parser);
    end Test_Stream_IO;
 
 end Test_Streams;

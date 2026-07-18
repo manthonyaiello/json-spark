@@ -1,0 +1,23 @@
+--  SPDX-License-Identifier: Apache-2.0
+
+--  Compiles the Ada example extracted from the top-level README against the
+--  json library, so CI catches the snippet drifting out of sync with the API.
+--  The source is generated into build/readme by scripts/check-readme-example.sh;
+--  it is not a shipped executable (not listed in tools' alire.toml).
+
+with "json";
+
+project Readme_Example is
+
+   for Create_Missing_Dirs use "True";
+
+   for Source_Dirs use ("build/readme");
+   for Object_Dir use "build/readme/obj";
+   for Exec_Dir use "build/readme/bin";
+
+   for Main use ("example.adb");
+
+   package Compiler renames JSON.Compiler;
+   package Binder renames JSON.Binder;
+
+end Readme_Example;

@@ -1,19 +1,19 @@
 name = "json_tools"
-description = "Tools for json-ada"
-version = "6.0.0"
-website = "https://github.com/onox/json-ada"
+description = "Tools for json-spark (fork of onox/json-ada)"
+version = "7.1.0"
+website = "https://github.com/manthonyaiello/json-spark"
 licenses = "Apache-2.0"
-tags = ["json"]
+tags = ["json", "spark"]
 
 executables = ["pretty_print"]
 project-files = ["json_tools.gpr"]
 
 authors = ["onox"]
-maintainers = ["onox <denkpadje@gmail.com>"]
-maintainers-logins = ["onox"]
+maintainers = ["M. Anthony Aiello <m.anthony.aiello@gmail.com>"]
+maintainers-logins = ["manthonyaiello"]
 
 [[depends-on]]
-json = "^6.0.0"
+json = "^7.0.0"
 
 [[pins]]
 json = { path = "../json" }

@@ -1,3 +1,5 @@
+pragma Unevaluated_Use_Of_Old (Allow);
+
 pragma Restrictions (No_Implicit_Aliasing);
 pragma Restrictions (No_Implicit_Dynamic_Code);
 
@@ -12,8 +14,10 @@ pragma Restrictions (No_Dependence => Ada.Asynchronous_Task_Control);
 pragma Restrictions (No_Reentrancy);
 
 pragma Restrictions (No_Obsolescent_Features);
-pragma Restrictions (No_Implementation_Aspect_Specifications);
-pragma Restrictions (No_Implementation_Attributes);
+--  No_Implementation_Aspect_Specifications and
+--  No_Implementation_Attributes are not used because SPARK_Mode and
+--  other SPARK annotations ('Loop_Entry, ...) are implementation-defined
+--  aspects and attributes
 pragma Restrictions (No_Implementation_Identifiers);
 --  pragma Restrictions (No_Implementation_Pragmas);
 pragma Restrictions (No_Implementation_Units);

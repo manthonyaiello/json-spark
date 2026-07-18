@@ -14,498 +14,506 @@
 --  See the License for the specific language governing permissions and
 --  limitations under the License.
 
-with Ada.Characters.Handling;
 with Ada.Characters.Latin_1;
-with Ada.Strings.Bounded;
-with Ada.Strings.Unbounded;
+with Ada.Numerics.Big_Numbers.Big_Integers;
+with Ada.Unchecked_Deallocation;
 
-package body JSON.Types is
+package body JSON.Types with SPARK_Mode => On is
 
-   package SU renames Ada.Strings.Unbounded;
+   use Ada.Numerics.Big_Numbers.Big_Integers;
 
-   function "+" (Text : String) return SU.Unbounded_String
-     renames SU.To_Unbounded_String;
+   procedure Free_Text is new Ada.Unchecked_Deallocation
+     (Object => String, Name => Streams.Text_Access);
 
-   function "+" (Text : SU.Unbounded_String) return String
-     renames SU.To_String;
+   procedure Dealloc is new Ada.Unchecked_Deallocation
+     (Object => JSON_Value, Name => JSON_Value_Access);
+
+   function Size (V : access constant JSON_Value) return Big_Natural is
+     (if V = null then
+        To_Big_Integer (0)
+      else
+        To_Big_Integer (1) + Size (V.First_Child) + Size (V.Next))
+   with Ghost, Subprogram_Variant => (Structural => V);
+   --  Number of nodes reachable from V, following both children and
+   --  siblings: the measure showing that freeing and reversing terminate.
+   --  The SPARK ownership model guarantees the tree is acyclic and
+   --  finite, so the recursion is well defined; its own termination is
+   --  established by the structural variant.
+
+   function To_Text (Value : String) return not null Streams.Text_Access is
+      subtype Constrained_String is String (1 .. Value'Length);
+   begin
+      --  The conversion slides the bounds of Value to 1 .. Value'Length
+      return new Constrained_String'(Constrained_String (Value));
+   end To_Text;
 
    function Unescape (Text : String) return String is
-      --  Add 1 so that the length is always positive
-      package SB is new Ada.Strings.Bounded.Generic_Bounded_Length (Max => Text'Length + 1);
-
-      Value   : SB.Bounded_String;
-      Escaped : Boolean := False;
-
       use Ada.Characters.Latin_1;
-   begin
-      for C of Text loop
-         if Escaped then
-            case C is
-               when '"' | '\' | '/' =>
-                  SB.Append (Value, C);
-               when 'b' =>
-                  SB.Append (Value, BS);
-               when 'f' =>
-                  SB.Append (Value, FF);
-               when 'n' =>
-                  SB.Append (Value, LF);
-               when 'r' =>
-                  SB.Append (Value, CR);
-               when 't' =>
-                  SB.Append (Value, HT);
-               when others =>
-                  raise Program_Error;
-            end case;
-         elsif C = '"' then
-            raise Program_Error;
-         elsif C /= '\' then
-            if Ada.Characters.Handling.Is_Control (C) then
-               raise Program_Error;
-            end if;
-            SB.Append (Value, C);
+
+      Result : String (1 .. Text'Length) := (others => ' ');
+      Last   : Natural := 0;
+
+      --  Number of characters of Text already consumed as part of a
+      --  multi-character escape sequence and still to be stepped over
+      Skip : Natural := 0;
+
+      function To_Hex_Digit (Value : Character) return Natural is
+        (case Value is
+           when '0' .. '9' => Character'Pos (Value) - Character'Pos ('0'),
+           when 'a' .. 'f' => Character'Pos (Value) - Character'Pos ('a') + 10,
+           when 'A' .. 'F' => Character'Pos (Value) - Character'Pos ('A') + 10,
+           when others     => 0)
+      with Post => To_Hex_Digit'Result <= 15;
+
+      function Is_Hex_Quad_At (Index : Positive) return Boolean is
+        (Index in Text'Range
+           and then Text'Last - Index >= 3
+           and then (for all J in Index .. Index + 3 =>
+                       Text (J) in '0' .. '9' | 'a' .. 'f' | 'A' .. 'F'));
+      --  True if Text has 4 hexadecimal digits starting at Index
+
+      function Hex_Quad_At (Index : Positive) return Natural is
+        (((To_Hex_Digit (Text (Index)) * 16
+           + To_Hex_Digit (Text (Index + 1))) * 16
+           + To_Hex_Digit (Text (Index + 2))) * 16
+           + To_Hex_Digit (Text (Index + 3)))
+      with Pre  => Is_Hex_Quad_At (Index),
+           Post => Hex_Quad_At'Result <= 16#FFFF#;
+      --  Value of the 4 hexadecimal digits starting at Index, as a
+      --  UTF-16 code unit
+
+      procedure Append_Code_Point (Code : Natural)
+        with Pre  => Code <= 16#10FFFF#
+                       and then Last <= Result'Length - 4,
+             Post => Last in Last'Old + 1 .. Last'Old + 4
+                       and then (if Code <= 16#FFFF# then
+                                   Last <= Last'Old + 3)
+      --  Append the UTF-8 encoding (1 to 4 bytes) of a code point
+      is
+      begin
+         if Code <= 16#7F# then
+            Result (Last + 1) := Character'Val (Code);
+            Last := Last + 1;
+         elsif Code <= 16#7FF# then
+            Result (Last + 1) := Character'Val (16#C0# + Code / 64);
+            Result (Last + 2) := Character'Val (16#80# + Code mod 64);
+            Last := Last + 2;
+         elsif Code <= 16#FFFF# then
+            Result (Last + 1) := Character'Val (16#E0# + Code / 4096);
+            Result (Last + 2) := Character'Val (16#80# + (Code / 64) mod 64);
+            Result (Last + 3) := Character'Val (16#80# + Code mod 64);
+            Last := Last + 3;
+         else
+            Result (Last + 1) := Character'Val (16#F0# + Code / 262144);
+            Result (Last + 2) := Character'Val (16#80# + (Code / 4096) mod 64);
+            Result (Last + 3) := Character'Val (16#80# + (Code / 64) mod 64);
+            Result (Last + 4) := Character'Val (16#80# + Code mod 64);
+            Last := Last + 4;
          end if;
-         Escaped := not Escaped and C = '\';
+      end Append_Code_Point;
+   begin
+      for J in Text'Range loop
+         pragma Loop_Invariant (Last <= J - Text'First + Skip);
+         pragma Loop_Invariant (Skip <= Text'Last - J + 1);
+
+         if Skip > 0 then
+            Skip := Skip - 1;
+         else
+            declare
+               C : constant Character := Text (J);
+            begin
+               if C = '\' and then J < Text'Last then
+                  declare
+                     E : constant Character := Text (J + 1);
+                  begin
+                     if E = 'u'
+                       and then Text'Last - J >= 5
+                       and then Is_Hex_Quad_At (J + 2)
+                     then
+                        declare
+                           Unit : constant Natural := Hex_Quad_At (J + 2);
+                        begin
+                           if Unit in 16#D800# .. 16#DBFF#
+                             and then Text'Last - J >= 11
+                             and then Text (J + 6) = '\'
+                             and then Text (J + 7) = 'u'
+                             and then Is_Hex_Quad_At (J + 8)
+                             and then Hex_Quad_At (J + 8) in 16#DC00# .. 16#DFFF#
+                           then
+                              --  A UTF-16 surrogate pair encoding a
+                              --  code point beyond the Basic
+                              --  Multilingual Plane
+                              Append_Code_Point
+                                (16#10000#
+                                   + (Unit - 16#D800#) * 16#400#
+                                   + (Hex_Quad_At (J + 8) - 16#DC00#));
+                              Skip := 11;
+                           elsif Unit in 16#D800# .. 16#DFFF# then
+                              --  A lone surrogate is not a valid code
+                              --  point; the tokenizer rejects it, but
+                              --  emit U+FFFD (replacement character)
+                              --  to keep this function total
+                              Append_Code_Point (16#FFFD#);
+                              Skip := 5;
+                           else
+                              Append_Code_Point (Unit);
+                              Skip := 5;
+                           end if;
+                        end;
+                     else
+                        --  A single-character escape sequence (or a
+                        --  malformed \u escape, which the tokenizer
+                        --  rejects; the character is copied unchanged
+                        --  to keep this function total)
+                        Last := Last + 1;
+                        Result (Last) :=
+                          (case E is
+                             when 'b'    => BS,
+                             when 'f'    => FF,
+                             when 'n'    => LF,
+                             when 'r'    => CR,
+                             when 't'    => HT,
+                             when others => E);
+                        Skip := 1;
+                     end if;
+                  end;
+               elsif C = '\' then
+                  --  A trailing \ at the end of the text, which the
+                  --  tokenizer rejects; skip it to keep this function
+                  --  total
+                  null;
+               else
+                  Last := Last + 1;
+                  Result (Last) := C;
+               end if;
+            end;
+         end if;
       end loop;
-      return SB.To_String (Value);
+      return Result (1 .. Last);
    end Unescape;
 
    -----------------------------------------------------------------------------
-   --                             Memory allocator                            --
+   --                                Observers                                --
    -----------------------------------------------------------------------------
 
-   function Create_Array
-     (Object : Memory_Allocator;
-      Depth  : Positive) return Array_Offset is
-   begin
-      if Depth > Object.Maximum_Depth then
-         raise Constraint_Error with
-           "Maximum depth (" & Object.Maximum_Depth'Image & ") exceeded";
-      end if;
-      return Array_Offset (Object.Array_Levels (Depth).Length);
-   end Create_Array;
+   function Kind (Object : not null access constant JSON_Value) return Value_Kind
+     is (Object.Kind);
 
-   function Create_Object
-     (Object : Memory_Allocator;
-      Depth  : Positive) return Array_Offset is
+   function Value (Object : not null access constant JSON_Value) return String
+     is (if Object.Str = null then "" else Unescape (Object.Str.all));
+
+   function Value (Object : not null access constant JSON_Value) return Integer_Type
+     is (Object.Integer_Value);
+
+   function Value (Object : not null access constant JSON_Value) return Float_Type
+     is (if Object.Kind = Integer_Kind then
+           Float_Type (Object.Integer_Value)
+         else
+           Object.Float_Value);
+
+   function Value (Object : not null access constant JSON_Value) return Boolean
+     is (Object.Boolean_Value);
+
+   function Length (Object : not null access constant JSON_Value) return Natural
+     is (Object.Length);
+
+   function Get
+     (Object : not null access constant JSON_Value;
+      Index  : Positive) return access constant JSON_Value
+   is
+      Node  : access constant JSON_Value := Object.First_Child;
+      Count : Positive := 1;
    begin
-      if Depth > Object.Maximum_Depth then
-         raise Constraint_Error with
-           "Maximum depth (" & Object.Maximum_Depth'Image & ") exceeded";
-      end if;
-      return Array_Offset (Object.Object_Levels (Depth).Length);
-   end Create_Object;
+      while Node /= null loop
+         pragma Loop_Invariant (Count <= Index);
+         pragma Loop_Variant (Structural => Node);
+
+         if Count = Index then
+            return Node;
+         end if;
+         Count := Count + 1;
+         Node := Node.Next;
+      end loop;
+      return null;
+   end Get;
+
+   function Get
+     (Object : not null access constant JSON_Value;
+      Key    : String) return access constant JSON_Value
+   is
+      Node : access constant JSON_Value := Object.First_Child;
+   begin
+      while Node /= null loop
+         pragma Loop_Variant (Structural => Node);
+
+         if Node.Key /= null and then Node.Key.all = Key then
+            return Node;
+         end if;
+         Node := Node.Next;
+      end loop;
+      return null;
+   end Get;
+
+   function Contains
+     (Object : not null access constant JSON_Value;
+      Key    : String) return Boolean
+   is (Get (Object, Key) /= null);
+
+   -----------------------------------------------------------------------------
+   --                                Iterating                                --
+   -----------------------------------------------------------------------------
+
+   function First (Object : not null access constant JSON_Value)
+     return access constant JSON_Value
+   is (Object.First_Child);
+
+   function Next (Object : not null access constant JSON_Value)
+     return access constant JSON_Value
+   is (Object.Next);
+
+   function Key (Object : not null access constant JSON_Value) return String
+     is (if Object.Key = null then "" else Unescape (Object.Key.all));
+
+   function Has_Key (Object : not null access constant JSON_Value) return Boolean
+     is (Object.Key /= null);
+
+   -----------------------------------------------------------------------------
+   --                                  Image                                  --
+   -----------------------------------------------------------------------------
+
+   procedure Append_Image
+     (Object : not null access constant JSON_Value;
+      Result : in out Streams.String_Buffer)
+   with Always_Terminates,
+        Subprogram_Variant => (Structural => Object),
+        Exceptional_Cases  => (Streams.Buffer_Overflow_Error => True);
+
+   procedure Append_Image
+     (Object : not null access constant JSON_Value;
+      Result : in out Streams.String_Buffer) is
+   begin
+      case Object.Kind is
+         when Array_Kind | Object_Kind =>
+            Streams.Append
+              (Result, (if Object.Kind = Array_Kind then "[" else "{"));
+            declare
+               Node          : access constant JSON_Value := Object.First_Child;
+               First_Element : Boolean := True;
+            begin
+               while Node /= null loop
+                  pragma Loop_Variant (Structural => Node);
+
+                  if not First_Element then
+                     Streams.Append (Result, ",");
+                  end if;
+                  First_Element := False;
+
+                  if Object.Kind = Object_Kind then
+                     Streams.Append (Result, """");
+                     if Node.Key /= null then
+                        Streams.Append (Result, Node.Key.all);
+                     end if;
+                     Streams.Append (Result, """:");
+                  end if;
+
+                  Append_Image (Node, Result);
+                  Node := Node.Next;
+               end loop;
+            end;
+            Streams.Append
+              (Result, (if Object.Kind = Array_Kind then "]" else "}"));
+         when String_Kind =>
+            Streams.Append (Result, """");
+            if Object.Str /= null then
+               Streams.Append (Result, Object.Str.all);
+            end if;
+            Streams.Append (Result, """");
+         when Integer_Kind =>
+            declare
+               Image : constant String := Integer_Type'Image (Object.Integer_Value);
+            begin
+               if Object.Integer_Value < 0 then
+                  Streams.Append (Result, Image);
+               else
+                  Streams.Append (Result, Image (2 .. Image'Last));
+               end if;
+            end;
+         when Float_Kind =>
+            declare
+               Image : constant String := Float_Type'Image (Object.Float_Value);
+            begin
+               if Object.Float_Value < 0.0 then
+                  Streams.Append (Result, Image);
+               else
+                  Streams.Append (Result, Image (2 .. Image'Last));
+               end if;
+            end;
+         when Boolean_Kind =>
+            Streams.Append
+              (Result, (if Object.Boolean_Value then "true" else "false"));
+         when Null_Kind =>
+            Streams.Append (Result, "null");
+      end case;
+   end Append_Image;
+
+   procedure Image
+     (Object : not null access constant JSON_Value;
+      Result : in out Streams.String_Buffer) is
+   begin
+      Append_Image (Object, Result);
+   end Image;
 
    -----------------------------------------------------------------------------
    --                              Constructors                               --
    -----------------------------------------------------------------------------
 
-   function Create_String
-     (Stream : Streams.Stream_Ptr;
-      Offset, Length : Streams.AS.Stream_Element_Offset) return JSON_Value is
-   begin
-      return (Kind => String_Kind, Stream => Stream,
-        String_Offset => Offset, String_Length => Length);
-   end Create_String;
+   function Is_Standalone (Object : not null access constant JSON_Value) return Boolean
+     is (Object.Next = null and Object.Key = null);
 
-   function Create_Integer (Value : Integer_Type) return JSON_Value is
-   begin
-      return (Kind => Integer_Kind, Integer_Value => Value);
-   end Create_Integer;
+   function Create_String (Value : String) return JSON_Value_Access is
+     (new JSON_Value'(Kind => String_Kind, Str => To_Text (Value), others => <>));
 
-   function Create_Float (Value : Float_Type) return JSON_Value is
-   begin
-      return (Kind => Float_Kind, Float_Value => Value);
-   end Create_Float;
+   function Create_Integer (Value : Integer_Type) return JSON_Value_Access is
+     (new JSON_Value'(Kind => Integer_Kind, Integer_Value => Value, others => <>));
 
-   function Create_Boolean (Value : Boolean) return JSON_Value is
-   begin
-      return (Kind => Boolean_Kind, Boolean_Value => Value);
-   end Create_Boolean;
+   function Create_Float (Value : Float_Type) return JSON_Value_Access is
+     (new JSON_Value'(Kind => Float_Kind, Float_Value => Value, others => <>));
 
-   function Create_Null return JSON_Value is
-   begin
-      return (Kind => Null_Kind);
-   end Create_Null;
+   function Create_Boolean (Value : Boolean) return JSON_Value_Access is
+     (new JSON_Value'(Kind => Boolean_Kind, Boolean_Value => Value, others => <>));
 
-   function Create_Array
-     (Allocator : Memory_Allocator_Ptr;
-      Depth     : Positive) return JSON_Value is
-   begin
-      return (Kind      => Array_Kind,
-              Allocator => Allocator,
-              Depth     => Depth,
-              Offset    => Create_Array (Allocator.all, Depth),
-              Length    => 0);
-   end Create_Array;
+   function Create_Null return JSON_Value_Access is
+     (new JSON_Value'(Kind => Null_Kind, others => <>));
 
-   function Create_Object
-     (Allocator : Memory_Allocator_Ptr;
-      Depth     : Positive) return JSON_Value is
-   begin
-      return (Kind      => Object_Kind,
-              Allocator => Allocator,
-              Depth     => Depth,
-              Offset    => Create_Object (Allocator.all, Depth),
-              Length    => 0);
-   end Create_Object;
+   function Create_Array return JSON_Value_Access is
+     (new JSON_Value'(Kind => Array_Kind, others => <>));
+
+   function Create_Object return JSON_Value_Access is
+     (new JSON_Value'(Kind => Object_Kind, others => <>));
 
    -----------------------------------------------------------------------------
-   --                                  Value                                  --
+   --                                Building                                 --
    -----------------------------------------------------------------------------
 
-   function "=" (Left : String; Right : JSON_Value) return Boolean is
-     (if Right.Kind = String_Kind then
-        Right.Stream.Is_Equal_String (Right.String_Offset, Right.String_Length, Left)
-      else
-        False);
-
-   function Value (Object : JSON_Value) return String is
+   procedure Append (Object : not null access JSON_Value; Value : in out JSON_Value_Access) is
    begin
-      if Object.Kind = String_Kind then
-         return Unescape (Object.Stream.Get_String
-           (Object.String_Offset, Object.String_Length));
+      if Object.First_Child = null then
+         Object.First_Child := Value;
       else
-         raise Invalid_Type_Error with "Value not a string";
+         declare
+            Node : access JSON_Value := Object.First_Child;
+         begin
+            while Node.Next /= null loop
+               pragma Loop_Invariant (Node /= null);
+               pragma Loop_Variant (Structural => Node);
+               Node := Node.Next;
+            end loop;
+            Node.Next := Value;
+         end;
       end if;
-   end Value;
-
-   function Value (Object : JSON_Value) return Boolean is
-   begin
-      if Object.Kind = Boolean_Kind then
-         return Object.Boolean_Value;
-      else
-         raise Invalid_Type_Error with "Value not a boolean";
-      end if;
-   end Value;
-
-   function Value (Object : JSON_Value) return Integer_Type is
-   begin
-      if Object.Kind = Integer_Kind then
-         return Object.Integer_Value;
-      else
-         raise Invalid_Type_Error with "Value not a integer";
-      end if;
-   end Value;
-
-   function Value (Object : JSON_Value) return Float_Type is
-   begin
-      if Object.Kind = Float_Kind then
-         return Object.Float_Value;
-      elsif Object.Kind = Integer_Kind then
-         return Float_Type (Object.Integer_Value);
-      else
-         raise Invalid_Type_Error with "Value not a float";
-      end if;
-   end Value;
-
-   -----------------------------------------------------------------------------
-
-   function Length (Object : JSON_Value) return Natural is
-   begin
-      if Object.Kind in Array_Kind | Object_Kind then
-         return Object.Length;
-      else
-         raise Invalid_Type_Error with "Value not an object or array";
-      end if;
-   end Length;
-
-   function Contains (Object : JSON_Value; Key : String) return Boolean is
-   begin
-      if Object.Kind = Object_Kind then
-         for Index in 1 .. Object.Length loop
-            declare
-               Pair : Key_Value_Pair renames Object.Allocator.Object_Levels
-                 (Object.Depth).Element (Object.Offset + Index);
-            begin
-               if Key = Pair.Key then
-                  return True;
-               end if;
-            end;
-         end loop;
-
-         return False;
-      else
-         raise Invalid_Type_Error with "Value not an object";
-      end if;
-   end Contains;
-
-   function Get (Object : JSON_Value; Index : Positive) return JSON_Value is
-   begin
-      if Object.Kind = Array_Kind then
-         return Object.Allocator.Array_Levels (Object.Depth).Element
-           (Object.Offset + Index).Value;
-      else
-         raise Invalid_Type_Error with "Value not an array";
-      end if;
-   exception
-      when Constraint_Error =>
-         raise Constraint_Error with "JSON array has no element at index" & Index'Image;
-   end Get;
-
-   function Get (Object : JSON_Value; Key : String) return JSON_Value is
-   begin
-      if Object.Kind = Object_Kind then
-         for Index in 1 .. Object.Length loop
-            declare
-               Pair : constant Key_Value_Pair := Object.Allocator.Object_Levels
-                 (Object.Depth).Element (Object.Offset + Index);
-            begin
-               if Key = Pair.Key then
-                  return Pair.Element;
-               end if;
-            end;
-         end loop;
-         raise Constraint_Error with "JSON object has no key '" & Key & "'";
-      else
-         raise Invalid_Type_Error with "Value not an object";
-      end if;
-   end Get;
-
-   procedure Append (Object : in out JSON_Value; Value : JSON_Value) is
-   begin
-      declare
-         Length : constant Natural
-           := Natural (Object.Allocator.Array_Levels (Object.Depth).Length);
-      begin
-         --  Assert that Object is the last array in a particular level
-         --  so that its elements form a continuous array
-         pragma Assert (Length = Object.Offset + Object.Length);
-      end;
-
-      Object.Allocator.Array_Levels (Object.Depth).Append
-        (Array_Value'(Kind => Value.Kind, Value => Value));
+      Value := null;
       Object.Length := Object.Length + 1;
    end Append;
 
    procedure Insert
-     (Object : in out JSON_Value;
-      Key    : JSON_Value;
-      Value  : JSON_Value;
-      Check_Duplicate_Keys : Boolean) is
+     (Object : not null access JSON_Value;
+      Key    : String;
+      Value  : in out JSON_Value_Access) is
    begin
-      if Check_Duplicate_Keys and then Object.Contains (Key.Value) then
-         raise Constraint_Error with "JSON object already has key '" & Key.Value & "'";
+      Value.Key := To_Text (Key);
+      if Object.First_Child = null then
+         Object.First_Child := Value;
+      else
+         declare
+            Node : access JSON_Value := Object.First_Child;
+         begin
+            while Node.Next /= null loop
+               pragma Loop_Invariant (Node /= null);
+               pragma Loop_Variant (Structural => Node);
+               Node := Node.Next;
+            end loop;
+            Node.Next := Value;
+         end;
       end if;
-
-      declare
-         Length : constant Natural
-           := Natural (Object.Allocator.Object_Levels (Object.Depth).Length);
-      begin
-         --  Assert that Object is the last object in a particular level
-         --  so that its key-value pairs form a continuous array
-         pragma Assert (Length = Object.Offset + Object.Length);
-      end;
-      pragma Assert (Key.Kind = String_Kind);
-
-      Object.Allocator.Object_Levels (Object.Depth).Append
-        (Key_Value_Pair'(Kind => Value.Kind, Key => Key, Element => Value));
+      Value := null;
       Object.Length := Object.Length + 1;
    end Insert;
 
-   -----------------------------------------------------------------------------
-
-   function Constant_Reference (Object : JSON_Value; Index : Positive)
-     return JSON_Value renames Get;
-
-   function Constant_Reference (Object : JSON_Value; Key : String)
-     return JSON_Value renames Get;
-
-   function Constant_Reference (Object : aliased JSON_Value; Position : Cursor)
-     return JSON_Value is
+   procedure Prepend (Object : not null access JSON_Value; Value : in out JSON_Value_Access) is
+      Tmp : JSON_Value_Access := Object.First_Child;
    begin
-      case Position.Kind is
-         when Array_Kind =>
-            return Object.Allocator.Array_Levels (Position.Data.Depth).Element
-              (Position.Data.Offset + Position.Index).Value;
-         when Object_Kind =>
-            return Object.Allocator.Object_Levels (Position.Data.Depth).Element
-              (Position.Data.Offset + Position.Index).Key;
-      end case;
-   end Constant_Reference;
+      Object.First_Child := null;
+      Value.Next := Tmp;
+      Object.First_Child := Value;
+      Value := null;
+      Object.Length := Object.Length + 1;
+   end Prepend;
 
-   function Has_Element (Position : Cursor) return Boolean is
-     (Position.Index <= Position.Data.Length);
-
-   overriding
-   function First (Object : Iterator) return Cursor is
+   procedure Prepend_Member
+     (Object : not null access JSON_Value;
+      Key    : String;
+      Value  : in out JSON_Value_Access)
+   is
+      Tmp : JSON_Value_Access := Object.First_Child;
    begin
-      return (Kind => Object.Kind, Data => Object.Data, Index => 1);
-   end First;
+      Object.First_Child := null;
+      Value.Key := To_Text (Key);
+      Value.Next := Tmp;
+      Object.First_Child := Value;
+      Value := null;
+      Object.Length := Object.Length + 1;
+   end Prepend_Member;
 
-   overriding
-   function Next
-     (Object   : Iterator;
-      Position : Cursor) return Cursor is
+   procedure Reverse_Elements (Object : not null access JSON_Value) is
+      Previous : JSON_Value_Access := null;
+      Current  : JSON_Value_Access := Object.First_Child;
    begin
-      return (Kind => Position.Kind, Data => Position.Data, Index => Position.Index + 1);
-   end Next;
-
-   function Iterate (Object : JSON_Value)
-     return Value_Iterator_Interfaces.Forward_Iterator'Class is
-   begin
-      if Object.Kind in Array_Kind | Object_Kind then
-         return Iterator'(Kind => Object.Kind, Data => Object);
-      else
-         raise Program_Error with "Can only iterate over an array or object";
-      end if;
-   end Iterate;
-
-   -----------------------------------------------------------------------------
-   --                                 Helpers                                 --
-   -----------------------------------------------------------------------------
-
-   function Get_Array_Or_Empty
-     (Object : JSON_Value; Key : String) return JSON_Value is
-   begin
-      if Object.Contains (Key) then
-         return Object.Get (Key);
-      else
-         return
-           (Kind      => Array_Kind,
-            Allocator => Object.Allocator,
-            Depth     => Object.Allocator.Array_Levels'First,
-            Offset    => 0,
-            Length    => 0);
-      end if;
-   end Get_Array_Or_Empty;
-
-   function Get_Object_Or_Empty
-     (Object : JSON_Value; Key : String) return JSON_Value is
-   begin
-      if Object.Contains (Key) then
-         return Object.Get (Key);
-      else
-         return
-           (Kind      => Object_Kind,
-            Allocator => Object.Allocator,
-            Depth     => Object.Allocator.Object_Levels'First,
-            Offset    => 0,
-            Length    => 0);
-      end if;
-   end Get_Object_Or_Empty;
-
-   function Get
-     (Object  : JSON_Value;
-      Key     : String;
-      Default : Integer_Type) return JSON_Value is
-   begin
-      if Object.Contains (Key) then
-         return Object.Get (Key);
-      else
-         return Create_Integer (Default);
-      end if;
-   end Get;
-
-   function Get
-     (Object  : JSON_Value;
-      Key     : String;
-      Default : Float_Type) return JSON_Value is
-   begin
-      if Object.Contains (Key) then
-         return Object.Get (Key);
-      else
-         return Create_Float (Default);
-      end if;
-   end Get;
-
-   function Get
-     (Object  : JSON_Value;
-      Key     : String;
-      Default : Boolean) return JSON_Value is
-   begin
-      if Object.Contains (Key) then
-         return Object.Get (Key);
-      else
-         return Create_Boolean (Default);
-      end if;
-   end Get;
-
-   -----------------------------------------------------------------------------
-   --                                  Image                                   -
-   -----------------------------------------------------------------------------
-
-   function Image_String (Object : JSON_Value) return String is
-      Text : String renames Object.Stream.Get_String
-        (Object.String_Offset, Object.String_Length);
-   begin
-      --  A string backed by a stream is always escaped. The tokenizer
-      --  will verify that the string does not contain unexpected characters
-      return '"' & Text & '"';
-   end Image_String;
-
-   function Image_Integer (Object : JSON_Value) return String is
-      Result : constant String := Integer_Type'Image (Object.Integer_Value);
-   begin
-      if Object.Integer_Value < 0 then
-         return Result;
-      else
-         return Result (2 .. Result'Last);
-      end if;
-   end Image_Integer;
-
-   function Image_Float (Object : JSON_Value) return String is
-      Result : constant String := Float_Type'Image (Object.Float_Value);
-   begin
-      if Object.Float_Value < 0.0 then
-         return Result;
-      else
-         return Result (2 .. Result'Last);
-      end if;
-   end Image_Float;
-
-   function Image_Boolean (Object : JSON_Value) return String is
-     (if Object.Boolean_Value then "true" else "false");
-
-   function Image_Array (Object : JSON_Value) return String is
-      Index  : Natural             := 0;
-      Result : SU.Unbounded_String := +"[";
-   begin
-      for Element of Object loop
-         Index := Index + 1;
-         if Index > 1 then
-            SU.Append (Result, ",");
-         end if;
-         SU.Append (Result, Element.Image);
+      Object.First_Child := null;
+      while Current /= null loop
+         pragma Loop_Variant (Decreases => Size (Current));
+         declare
+            Tmp : JSON_Value_Access := Current.Next;
+         begin
+            Current.Next := Previous;
+            Previous := Current;
+            Current := Tmp;
+         end;
       end loop;
-      SU.Append (Result, "]");
-      return +Result;
-   end Image_Array;
+      Object.First_Child := Previous;
+   end Reverse_Elements;
 
-   function Image_Object (Object : JSON_Value) return String is
-      Index  : Natural             := 0;
-      Result : SU.Unbounded_String := +"{";
+   --  Free_Node carries the Subprogram_Variant that Free cannot: the
+   --  variant would have to appear on Free's declaration in the spec,
+   --  where the ghost Size measure is not visible
+
+   procedure Free_Node (Object : in out JSON_Value_Access)
+   with Post               => Object = null,
+        Always_Terminates,
+        Subprogram_Variant => (Decreases => Size (Object));
+
+   procedure Free_Node (Object : in out JSON_Value_Access) is
    begin
-      for Key of Object loop
-         Index := Index + 1;
-         if Index > 1 then
-            SU.Append (Result, ',');
-         end if;
-         SU.Append (Result, '"' & Key.Value & '"');
-         SU.Append (Result, ':');
-         SU.Append (Result, Object.Get (Key.Value).Image);
+      while Object /= null loop
+         pragma Loop_Invariant (Size (Object) <= Size (Object)'Loop_Entry);
+         pragma Loop_Variant (Decreases => Size (Object));
+
+         Free_Node (Object.First_Child);
+         Free_Text (Object.Key);
+         Free_Text (Object.Str);
+
+         declare
+            Rest : constant JSON_Value_Access := Object.Next;
+         begin
+            Object.Next := null;
+            Dealloc (Object);
+            Object := Rest;
+         end;
       end loop;
-      SU.Append (Result, '}');
-      return +Result;
-   end Image_Object;
+   end Free_Node;
 
-   function Image (Object : JSON_Value) return String is
+   procedure Free (Object : in out JSON_Value_Access) is
    begin
-      case Object.Kind is
-         when Array_Kind =>
-            return Image_Array (Object);
-         when Object_Kind =>
-            return Image_Object (Object);
-         when String_Kind =>
-            return Image_String (Object);
-         when Integer_Kind =>
-            return Image_Integer (Object);
-         when Float_Kind =>
-            return Image_Float (Object);
-         when Boolean_Kind =>
-            return Image_Boolean (Object);
-         when Null_Kind =>
-            return "null";
-      end case;
-   end Image;
+      Free_Node (Object);
+   end Free;
 
 end JSON.Types;

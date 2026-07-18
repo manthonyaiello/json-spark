@@ -36,6 +36,9 @@ private
    procedure Test_Number_String_Token (Object : in out Test);
    procedure Test_Escaped_Character_String_Token (Object : in out Test);
    procedure Test_Escaped_Quotation_Solidus_String_Token (Object : in out Test);
+   procedure Test_Escaped_Unicode_String_Token (Object : in out Test);
+   procedure Test_Escaped_Unicode_Uppercase_String_Token (Object : in out Test);
+   procedure Test_Escaped_Unicode_Surrogate_Pair_String_Token (Object : in out Test);
 
    --  Integer/float number
    procedure Test_Zero_Number_Token (Object : in out Test);
@@ -59,6 +62,12 @@ private
    --  Exceptions
    procedure Test_Control_Character_String_Exception (Object : in out Test);
    procedure Test_Unexpected_Escaped_Character_String_Exception (Object : in out Test);
+   procedure Test_Truncated_Escaped_Unicode_String_Exception (Object : in out Test);
+   procedure Test_Non_Hex_Escaped_Unicode_String_Exception (Object : in out Test);
+   procedure Test_Lone_High_Surrogate_String_Exception (Object : in out Test);
+   procedure Test_Lone_Low_Surrogate_String_Exception (Object : in out Test);
+   procedure Test_High_Surrogate_Without_Low_String_Exception (Object : in out Test);
+   procedure Test_High_Surrogate_Wrong_Escape_String_Exception (Object : in out Test);
    procedure Test_Minus_Number_EOF_Exception (Object : in out Test);
    procedure Test_Minus_Number_Exception (Object : in out Test);
    procedure Test_End_Dot_Number_Exception (Object : in out Test);

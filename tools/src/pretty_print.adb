@@ -18,8 +18,9 @@ with Ada.Command_Line;
 with Ada.Strings.Fixed;
 with Ada.Text_IO;
 
-with JSON.Types;
 with JSON.Parsers;
+with JSON.Streams;
+with JSON.Types;
 
 procedure Pretty_Print is
    package ACL renames Ada.Command_Line;
@@ -31,7 +32,7 @@ procedure Pretty_Print is
    type Indent_Type is range 2 .. 8;
 
    procedure Print
-     (Value  : Types.JSON_Value;
+     (Value  : not null access constant Types.JSON_Value;
       Indent : Indent_Type := 4;
       Level  : Positive    := 1)
    is
@@ -41,22 +42,28 @@ procedure Pretty_Print is
       Index  : Positive := 1;
       Spaces : constant Natural := Natural (Indent);
    begin
-      case Value.Kind is
+      case Types.Kind (Value) is
          when Object_Kind =>
-            if Value.Length > 0 then
+            if Types.Length (Value) > 0 then
                Ada.Text_IO.Put_Line ("{");
 
-               for E of Value loop
-                  if Index > 1 then
-                     Ada.Text_IO.Put_Line (",");
-                  end if;
+               declare
+                  Element : access constant Types.JSON_Value := Types.First (Value);
+               begin
+                  while Element /= null loop
+                     if Index > 1 then
+                        Ada.Text_IO.Put_Line (",");
+                     end if;
 
-                  --  Print key and element
-                  Ada.Text_IO.Put (Spaces * Level * ' ' & E.Image & ": ");
-                  Print (Value (E.Value), Indent, Level + 1);
+                     --  Print key and element
+                     Ada.Text_IO.Put
+                       (Spaces * Level * ' ' & '"' & Types.Key (Element) & """: ");
+                     Print (Element, Indent, Level + 1);
 
-                  Index := Index + 1;
-               end loop;
+                     Index := Index + 1;
+                     Element := Types.Next (Element);
+                  end loop;
+               end;
 
                Ada.Text_IO.New_Line;
                Ada.Text_IO.Put (Spaces * (Level - 1) * ' ' & "}");
@@ -64,20 +71,25 @@ procedure Pretty_Print is
                Ada.Text_IO.Put ("{}");
             end if;
          when Array_Kind =>
-            if Value.Length > 0 then
+            if Types.Length (Value) > 0 then
                Ada.Text_IO.Put_Line ("[");
 
-               for E of Value loop
-                  if Index > 1 then
-                     Ada.Text_IO.Put_Line (",");
-                  end if;
+               declare
+                  Element : access constant Types.JSON_Value := Types.First (Value);
+               begin
+                  while Element /= null loop
+                     if Index > 1 then
+                        Ada.Text_IO.Put_Line (",");
+                     end if;
 
-                  --  Print element
-                  Ada.Text_IO.Put (Spaces * Level * ' ');
-                  Print (E, Indent, Level + 1);
+                     --  Print element
+                     Ada.Text_IO.Put (Spaces * Level * ' ');
+                     Print (Element, Indent, Level + 1);
 
-                  Index := Index + 1;
-               end loop;
+                     Index := Index + 1;
+                     Element := Types.Next (Element);
+                  end loop;
+               end;
 
                Ada.Text_IO.New_Line;
                Ada.Text_IO.Put (Spaces * (Level - 1) * ' ' & "]");
@@ -85,7 +97,13 @@ procedure Pretty_Print is
                Ada.Text_IO.Put ("[]");
             end if;
          when others =>
-            Ada.Text_IO.Put (Value.Image);
+            declare
+               Buffer : JSON.Streams.String_Buffer;
+            begin
+               Types.Image (Value, Buffer);
+               Ada.Text_IO.Put (JSON.Streams.To_String (Buffer));
+               JSON.Streams.Destroy (Buffer);
+            end;
       end case;
    end Print;
 
@@ -99,11 +117,17 @@ begin
    end if;
 
    declare
-      Parser : Parsers.Parser := Parsers.Create_From_File (ACL.Argument (ACL.Argument_Count));
-      Value  : constant Types.JSON_Value := Parser.Parse;
+      Parser   : Parsers.Parser;
+      Document : aliased Types.JSON_Value_Access;
    begin
+      Parsers.Create_From_File (Parser, ACL.Argument (ACL.Argument_Count));
+      Parsers.Parse (Parser, Document);
+
       if not Is_Quiet then
-         Print (Value, Indent => 4);
+         Print (Document, Indent => 4);
       end if;
+
+      Types.Free (Document);
+      Parsers.Destroy (Parser);
    end;
 end Pretty_Print;

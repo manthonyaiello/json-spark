@@ -1,0 +1,9 @@
+# proof-xfail.txt — expected-unproved SPARK checks.
+#
+# The json library proves to Silver with no unproved checks, so this
+# baseline is normally empty. Any entry here is an expected failure that
+# lives in a dependency (e.g. a SPARKlib lemma), not in json itself.
+# Regenerate with:  scripts/check-proof.sh --update
+#
+# expected-unproved-checks: 0
+

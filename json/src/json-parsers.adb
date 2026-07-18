@@ -14,215 +14,483 @@
 --  See the License for the specific language governing permissions and
 --  limitations under the License.
 
-with Ada.Exceptions;
-with Ada.Unchecked_Deallocation;
-
 with JSON.Tokenizers;
 
-package body JSON.Parsers is
+package body JSON.Parsers with SPARK_Mode => On is
+
+   --  On error paths, partial documents are released with Types.Free
+   --  before returning. Flow analysis does not model deallocation as an
+   --  effect and does not see the resulting null values being used.
+   pragma Warnings
+     (GNATprove, Off, "statement has no effect",
+      Reason => "Types.Free deallocates partial documents on error paths");
+   pragma Warnings
+     (GNATprove, Off, "*is set by ""Free"" but not used after the call",
+      Reason => "Types.Free sets its parameter to null on error paths");
+   pragma Warnings
+     (GNATprove, Off, "*is set by ""Parse_Value"" but not used after the call",
+      Reason => "only Status matters when the parsed value is not used");
+   pragma Warnings
+     (GNATprove, Off, "*is set by ""Scan_Token"" but not used after the call",
+      Reason => "only the status of the final EOF check matters");
 
    package Tokenizers is new JSON.Tokenizers (Types);
 
    use type Tokenizers.Token_Kind;
+   use type Tokenizers.Token_Status;
+   use type Types.Value_Kind;
 
-   function Parse_Token
-     (Stream : Streams.Stream_Ptr;
-      Token  : Tokenizers.Token;
-      Allocator : Types.Memory_Allocator_Ptr;
-      Depth     : Positive) return Types.JSON_Value;
+   type Parse_Status is
+     (Ok,
+      Tokenizer_Failed,
+      Unexpected_Token,
+      Expected_Value_Separator,
+      Expected_Name_Separator,
+      Expected_String_Key,
+      Duplicate_Key,
+      Depth_Exceeded,
+      Too_Many_Elements);
 
-   function Parse_Array
-     (Stream    : Streams.Stream_Ptr;
-      Allocator : Types.Memory_Allocator_Ptr;
-      Depth     : Positive) return Types.JSON_Value
+   function Message
+     (Status : Parse_Status;
+      Detail : Tokenizers.Token_Status) return String
+   with Pre => Status /= Ok;
+
+   function Message
+     (Status : Parse_Status;
+      Detail : Tokenizers.Token_Status) return String
+   is (case Status is
+         when Tokenizer_Failed =>
+           (if Detail /= Tokenizers.Success then
+              Tokenizers.Error_Message (Detail)
+            else
+              "Tokenizer error"),
+         when Unexpected_Token =>
+           "Unexpected token",
+         when Expected_Value_Separator =>
+           "Expected value separator (',' character)",
+         when Expected_Name_Separator =>
+           "Expected name separator (':' character)",
+         when Expected_String_Key =>
+           "Expected key to be a string",
+         when Duplicate_Key =>
+           "JSON object contains duplicate key",
+         when Depth_Exceeded =>
+           "Maximum depth exceeded",
+         when Too_Many_Elements =>
+           "Too many elements or members",
+         when Ok =>
+           raise Program_Error);
+
+   --  Parse_Value, Parse_Array, and Parse_Object report failures via
+   --  Status instead of raising an exception, so that each level of the
+   --  recursion can release the partial tree it owns; procedure Parse
+   --  raises Parse_Error at the top
+
+   procedure Parse_Value
+     (Stream        : in out Streams.Stream;
+      Current       : Tokenizers.Token;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status)
+   with Pre  =>
+     Depth <= Maximum_Depth
+       and then (if Current.Kind = Tokenizers.String_Token then
+                   Streams.Valid_Span
+                     (Stream, Current.String_Offset, Current.String_Length)),
+        Post =>
+     Streams.Length (Stream) = Streams.Length (Stream)'Old
+       and then Streams.Position (Stream) >= Streams.Position (Stream)'Old
+       and then (if Streams.Has_Buffered_Character (Stream)
+                     and then Streams.Position (Stream) = Streams.Position (Stream)'Old
+                 then
+                   Streams.Has_Buffered_Character (Stream)'Old)
+       and then (if Status = Ok then
+                   Result /= null and then Types.Is_Standalone (Result)
+                 else
+                   Result = null),
+        Always_Terminates,
+        Subprogram_Variant =>
+          (Decreases => Maximum_Depth - Depth, Decreases => 0);
+
+   procedure Parse_Array
+     (Stream        : in out Streams.Stream;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status)
+   with Pre  => Depth <= Maximum_Depth,
+        Post =>
+     Streams.Length (Stream) = Streams.Length (Stream)'Old
+       and then Streams.Position (Stream) >= Streams.Position (Stream)'Old
+       and then (if Streams.Has_Buffered_Character (Stream)
+                     and then Streams.Position (Stream) = Streams.Position (Stream)'Old
+                 then
+                   Streams.Has_Buffered_Character (Stream)'Old)
+       and then (if Status = Ok then
+                   Result /= null and then Types.Is_Standalone (Result)
+                 else
+                   Result = null),
+        Always_Terminates,
+        Subprogram_Variant =>
+          (Decreases => Maximum_Depth - Depth, Decreases => 1);
+
+   procedure Parse_Object
+     (Stream        : in out Streams.Stream;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status)
+   with Pre  => Depth <= Maximum_Depth,
+        Post =>
+     Streams.Length (Stream) = Streams.Length (Stream)'Old
+       and then Streams.Position (Stream) >= Streams.Position (Stream)'Old
+       and then (if Streams.Has_Buffered_Character (Stream)
+                     and then Streams.Position (Stream) = Streams.Position (Stream)'Old
+                 then
+                   Streams.Has_Buffered_Character (Stream)'Old)
+       and then (if Status = Ok then
+                   Result /= null and then Types.Is_Standalone (Result)
+                 else
+                   Result = null),
+        Always_Terminates,
+        Subprogram_Variant =>
+          (Decreases => Maximum_Depth - Depth, Decreases => 1);
+
+   procedure Parse_Value
+     (Stream        : in out Streams.Stream;
+      Current       : Tokenizers.Token;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status) is
+   begin
+      Result := null;
+      Status := Ok;
+      Detail := Tokenizers.Success;
+
+      case Current.Kind is
+         when Tokenizers.Begin_Array_Token =>
+            if Depth >= Maximum_Depth then
+               Status := Depth_Exceeded;
+            else
+               Parse_Array
+                 (Stream, Depth + 1, Maximum_Depth, Result, Status, Detail);
+            end if;
+         when Tokenizers.Begin_Object_Token =>
+            if Depth >= Maximum_Depth then
+               Status := Depth_Exceeded;
+            else
+               Parse_Object
+                 (Stream, Depth + 1, Maximum_Depth, Result, Status, Detail);
+            end if;
+         when Tokenizers.String_Token =>
+            Result := Types.Create_String
+              (Streams.Get_String
+                 (Stream, Current.String_Offset, Current.String_Length));
+         when Tokenizers.Integer_Token =>
+            Result := Types.Create_Integer (Current.Integer_Value);
+         when Tokenizers.Float_Token =>
+            Result := Types.Create_Float (Current.Float_Value);
+         when Tokenizers.Boolean_Token =>
+            Result := Types.Create_Boolean (Current.Boolean_Value);
+         when Tokenizers.Null_Token =>
+            Result := Types.Create_Null;
+         when others =>
+            Status := Unexpected_Token;
+      end case;
+   end Parse_Value;
+
+   procedure Parse_Array
+     (Stream        : in out Streams.Stream;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status)
    is
-      Token : Tokenizers.Token;
+      Container : Types.JSON_Value_Access := Types.Create_Array;
+      Element   : Types.JSON_Value_Access := null;
 
-      JSON_Array : Types.JSON_Value := Types.Create_Array (Allocator, Depth + 1);
+      Token        : Tokenizers.Token;
+      Token_Status : Tokenizers.Token_Status;
+
       Repeat : Boolean := False;
    begin
+      Result := null;
+      Status := Ok;
+      Detail := Tokenizers.Success;
+
       loop
-         Tokenizers.Read_Token (Stream.all, Token);
+         pragma Loop_Invariant (Container /= null);
+         pragma Loop_Invariant (Types.Kind (Container) = Types.Array_Kind);
+         pragma Loop_Invariant (Types.Is_Standalone (Container));
+         pragma Loop_Invariant (Element = null);
+         pragma Loop_Invariant (Status = Ok);
+         pragma Loop_Invariant
+           (Streams.Length (Stream) = Streams.Length (Stream)'Loop_Entry);
+         pragma Loop_Invariant
+           (Streams.Position (Stream) >= Streams.Position (Stream)'Loop_Entry);
+         pragma Loop_Invariant
+           (if Streams.Has_Buffered_Character (Stream)
+              and then Streams.Position (Stream) = Streams.Position (Stream)'Loop_Entry
+            then Streams.Has_Buffered_Character (Stream)'Loop_Entry);
+         pragma Loop_Variant
+           (Decreases =>
+              Streams.Length (Stream) - Streams.Position (Stream),
+            Decreases =>
+              (if Streams.Has_Buffered_Character (Stream) then 1 else 0));
+
+         Tokenizers.Scan_Token (Stream, Token, Token_Status);
+         if Token_Status /= Tokenizers.Success then
+            Types.Free (Container);
+            Status := Tokenizer_Failed;
+            Detail := Token_Status;
+            return;
+         end if;
 
          --  Either expect ']' character or (if not the first element)
          --  a value separator (',' character)
          if Token.Kind = Tokenizers.End_Array_Token then
             exit;
-         elsif Repeat and Token.Kind /= Tokenizers.Value_Separator_Token then
-            raise Parse_Error with "Expected value separator (',' character)";
          elsif Repeat then
+            if Token.Kind /= Tokenizers.Value_Separator_Token then
+               Types.Free (Container);
+               Status := Expected_Value_Separator;
+               return;
+            end if;
+
             --  Value separator has been read, now read the next value
-            Tokenizers.Read_Token (Stream.all, Token);
+            Tokenizers.Scan_Token (Stream, Token, Token_Status);
+            if Token_Status /= Tokenizers.Success then
+               Types.Free (Container);
+               Status := Tokenizer_Failed;
+               Detail := Token_Status;
+               return;
+            end if;
          end if;
 
-         --  Parse value and append it to the array
-         JSON_Array.Append (Parse_Token (Stream, Token, Allocator, Depth + 1));
+         --  Parse the value and prepend it to the array
+         Parse_Value
+           (Stream, Token, Depth, Maximum_Depth, Element, Status, Detail);
+         if Status /= Ok then
+            Types.Free (Container);
+            return;
+         end if;
+
+         if Types.Length (Container) = Natural'Last then
+            Types.Free (Container);
+            Types.Free (Element);
+            Status := Too_Many_Elements;
+            return;
+         end if;
+         Types.Prepend (Container, Element);
 
          Repeat := True;
       end loop;
 
-      return JSON_Array;
+      Types.Reverse_Elements (Container);
+      Result := Container;
    end Parse_Array;
 
-   function Parse_Object
-     (Stream    : Streams.Stream_Ptr;
-      Allocator : Types.Memory_Allocator_Ptr;
-      Depth     : Positive) return Types.JSON_Value
+   procedure Parse_Object
+     (Stream        : in out Streams.Stream;
+      Depth         : Positive;
+      Maximum_Depth : Positive;
+      Result        : out Types.JSON_Value_Access;
+      Status        : out Parse_Status;
+      Detail        : out Tokenizers.Token_Status)
    is
-      Token : Tokenizers.Token;
+      Container : Types.JSON_Value_Access := Types.Create_Object;
+      Element   : Types.JSON_Value_Access := null;
 
-      JSON_Object : Types.JSON_Value := Types.Create_Object (Allocator, Depth + 1);
+      Token        : Tokenizers.Token;
+      Token_Status : Tokenizers.Token_Status;
+
       Repeat : Boolean := False;
    begin
+      Result := null;
+      Status := Ok;
+      Detail := Tokenizers.Success;
+
       loop
-         Tokenizers.Read_Token (Stream.all, Token);
+         pragma Loop_Invariant (Container /= null);
+         pragma Loop_Invariant (Types.Kind (Container) = Types.Object_Kind);
+         pragma Loop_Invariant (Types.Is_Standalone (Container));
+         pragma Loop_Invariant (Element = null);
+         pragma Loop_Invariant (Status = Ok);
+         pragma Loop_Invariant
+           (Streams.Length (Stream) = Streams.Length (Stream)'Loop_Entry);
+         pragma Loop_Invariant
+           (Streams.Position (Stream) >= Streams.Position (Stream)'Loop_Entry);
+         pragma Loop_Invariant
+           (if Streams.Has_Buffered_Character (Stream)
+              and then Streams.Position (Stream) = Streams.Position (Stream)'Loop_Entry
+            then Streams.Has_Buffered_Character (Stream)'Loop_Entry);
+         pragma Loop_Variant
+           (Decreases =>
+              Streams.Length (Stream) - Streams.Position (Stream),
+            Decreases =>
+              (if Streams.Has_Buffered_Character (Stream) then 1 else 0));
+
+         Tokenizers.Scan_Token (Stream, Token, Token_Status);
+         if Token_Status /= Tokenizers.Success then
+            Types.Free (Container);
+            Status := Tokenizer_Failed;
+            Detail := Token_Status;
+            return;
+         end if;
 
          --  Either expect '}' character or (if not the first member)
          --  a value separator (',' character)
          if Token.Kind = Tokenizers.End_Object_Token then
             exit;
-         elsif Repeat and Token.Kind /= Tokenizers.Value_Separator_Token then
-            raise Parse_Error with "Expected value separator (',' character)";
          elsif Repeat then
-            --  Value separator has been read, now read the next value
-            Tokenizers.Read_Token (Stream.all, Token);
+            if Token.Kind /= Tokenizers.Value_Separator_Token then
+               Types.Free (Container);
+               Status := Expected_Value_Separator;
+               return;
+            end if;
+
+            --  Value separator has been read, now read the next member
+            Tokenizers.Scan_Token (Stream, Token, Token_Status);
+            if Token_Status /= Tokenizers.Success then
+               Types.Free (Container);
+               Status := Tokenizer_Failed;
+               Detail := Token_Status;
+               return;
+            end if;
          end if;
 
-         --  Parse member key
+         --  Parse the member key
          if Token.Kind /= Tokenizers.String_Token then
-            raise Parse_Error with "Expected key to be a string";
+            Types.Free (Container);
+            Status := Expected_String_Key;
+            return;
          end if;
 
          declare
-            Key : constant Types.JSON_Value
-              := Types.Create_String (Stream, Token.String_Offset, Token.String_Length);
+            Member_Key : constant String := Streams.Get_String
+              (Stream, Token.String_Offset, Token.String_Length);
          begin
-            --  Expect name separator (':' character) between key and value
-            Tokenizers.Read_Token (Stream.all, Token);
-            if Token.Kind /= Tokenizers.Name_Separator_Token then
-               raise Parse_Error with "Expected name separator (':' character)";
+            if Check_Duplicate_Keys
+              and then Types.Contains (Container, Member_Key)
+            then
+               Types.Free (Container);
+               Status := Duplicate_Key;
+               return;
             end if;
 
-            --  Parse member value and insert key-value pair in the object
-            Tokenizers.Read_Token (Stream.all, Token);
-            JSON_Object.Insert
-              (Key, Parse_Token (Stream, Token, Allocator, Depth + 1),
-               Check_Duplicate_Keys);
+            --  Expect a name separator (':' character) between the key
+            --  and the value
+            Tokenizers.Scan_Token (Stream, Token, Token_Status);
+            if Token_Status /= Tokenizers.Success then
+               Types.Free (Container);
+               Status := Tokenizer_Failed;
+               Detail := Token_Status;
+               return;
+            end if;
+
+            if Token.Kind /= Tokenizers.Name_Separator_Token then
+               Types.Free (Container);
+               Status := Expected_Name_Separator;
+               return;
+            end if;
+
+            --  Parse the member value and prepend the member
+            Tokenizers.Scan_Token (Stream, Token, Token_Status);
+            if Token_Status /= Tokenizers.Success then
+               Types.Free (Container);
+               Status := Tokenizer_Failed;
+               Detail := Token_Status;
+               return;
+            end if;
+
+            Parse_Value
+              (Stream, Token, Depth, Maximum_Depth, Element, Status, Detail);
+            if Status /= Ok then
+               Types.Free (Container);
+               return;
+            end if;
+
+            if Types.Length (Container) = Natural'Last then
+               Types.Free (Container);
+               Types.Free (Element);
+               Status := Too_Many_Elements;
+               return;
+            end if;
+            Types.Prepend_Member (Container, Member_Key, Element);
          end;
 
          Repeat := True;
       end loop;
 
-      return JSON_Object;
+      Types.Reverse_Elements (Container);
+      Result := Container;
    end Parse_Object;
 
-   function Parse_Token
-     (Stream : Streams.Stream_Ptr;
-      Token  : Tokenizers.Token;
-      Allocator : Types.Memory_Allocator_Ptr;
-      Depth     : Positive) return Types.JSON_Value is
-   begin
-      case Token.Kind is
-         when Tokenizers.Begin_Array_Token =>
-            return Parse_Array (Stream, Allocator, Depth);
-         when Tokenizers.Begin_Object_Token =>
-            return Parse_Object (Stream, Allocator, Depth);
-         when Tokenizers.String_Token =>
-            return Types.Create_String (Stream, Token.String_Offset, Token.String_Length);
-         when Tokenizers.Integer_Token =>
-            return Types.Create_Integer (Token.Integer_Value);
-         when Tokenizers.Float_Token =>
-            return Types.Create_Float (Token.Float_Value);
-         when Tokenizers.Boolean_Token =>
-            return Types.Create_Boolean (Token.Boolean_Value);
-         when Tokenizers.Null_Token =>
-            return Types.Create_Null;
-         when others =>
-            raise Parse_Error with "Unexpected token " & Token.Kind'Image;
-      end case;
-   end Parse_Token;
-
-   function Parse
-     (Stream    : Streams.Stream_Ptr;
-      Allocator : Types.Memory_Allocator_Ptr) return Types.JSON_Value with SPARK_Mode => On
+   procedure Create
+     (Object        : out Parser;
+      Text          : String;
+      Maximum_Depth : Positive := Default_Maximum_Depth)
    is
-      Token : Tokenizers.Token;
    begin
-      Tokenizers.Read_Token (Stream.all, Token);
-      return Value : constant Types.JSON_Value
-        := Parse_Token (Stream, Token, Allocator, Positive'First)
-      do
-         Tokenizers.Read_Token (Stream.all, Token, Expect_EOF => True);
-      end return;
-   exception
-      when E : Tokenizers.Tokenizer_Error =>
-         raise Parse_Error with Ada.Exceptions.Exception_Message (E);
-   end Parse;
-
-   function Create
-     (Pointer       : not null JSON.Streams.Stream_Element_Array_Access;
-      Maximum_Depth : Positive := Default_Maximum_Depth) return Parser is
-   begin
-      return
-        (Ada.Finalization.Limited_Controlled with
-         Maximum_Depth => Maximum_Depth,
-         Pointer       => Pointer,
-         Own_Pointer   => False,
-         Stream        => Streams.Create_Stream (Pointer),
-         Allocator     => <>);
+      Object.Maximum_Depth := Maximum_Depth;
+      Streams.From_Text (Object.Stream, Text);
    end Create;
 
-   function Create
-     (Text          : String;
-      Maximum_Depth : Positive := Default_Maximum_Depth) return Parser
+   procedure Create_From_File
+     (Object        : out Parser;
+      File_Name     : String;
+      Maximum_Depth : Positive := Default_Maximum_Depth)
    is
-      Pointer : constant not null Streams.Stream_Element_Array_Access := Streams.From_Text (Text);
    begin
-      return
-        (Ada.Finalization.Limited_Controlled with
-         Maximum_Depth => Maximum_Depth,
-         Pointer       => Pointer,
-         Own_Pointer   => True,
-         Stream        => Streams.Create_Stream (Pointer),
-         Allocator     => <>);
-   end Create;
-
-   function Create_From_File
-     (File_Name     : String;
-      Maximum_Depth : Positive := Default_Maximum_Depth) return Parser
-   is
-      Pointer : constant not null Streams.Stream_Element_Array_Access :=
-        Streams.From_File (File_Name);
-   begin
-      return
-        (Ada.Finalization.Limited_Controlled with
-         Maximum_Depth => Maximum_Depth,
-         Pointer       => Pointer,
-         Own_Pointer   => True,
-         Stream        => Streams.Create_Stream (Pointer),
-         Allocator     => <>);
+      Object.Maximum_Depth := Maximum_Depth;
+      Streams.From_File (Object.Stream, File_Name);
    end Create_From_File;
 
-   function Parse (Object : in out Parser) return Types.JSON_Value is
+   procedure Parse
+     (Object   : in out Parser;
+      Document : aliased out Types.JSON_Value_Access)
+   is
+      Token        : Tokenizers.Token;
+      Token_Status : Tokenizers.Token_Status;
+
+      Root   : Types.JSON_Value_Access;
+      Status : Parse_Status;
+      Detail : Tokenizers.Token_Status;
    begin
-      return Parse (Object.Stream'Unchecked_Access, Object.Allocator'Unchecked_Access);
+      Document := null;
+
+      Tokenizers.Scan_Token (Object.Stream, Token, Token_Status);
+      if Token_Status /= Tokenizers.Success then
+         raise Parse_Error with Tokenizers.Error_Message (Token_Status);
+      end if;
+
+      Parse_Value
+        (Object.Stream, Token, 1, Object.Maximum_Depth, Root, Status, Detail);
+      if Status /= Ok then
+         raise Parse_Error with Message (Status, Detail);
+      end if;
+
+      Tokenizers.Scan_Token
+        (Object.Stream, Token, Token_Status, Expect_EOF => True);
+      if Token_Status /= Tokenizers.Success then
+         Types.Free (Root);
+         raise Parse_Error with Tokenizers.Error_Message (Token_Status);
+      end if;
+
+      Document := Root;
    end Parse;
 
-   overriding
-   procedure Finalize (Object : in out Parser) is
-      procedure Free is new Ada.Unchecked_Deallocation
-        (Object => Streams.AS.Stream_Element_Array,
-         Name   => Streams.Stream_Element_Array_Access);
-
-      use type Streams.Stream_Element_Array_Access;
+   procedure Destroy (Object : in out Parser) is
    begin
-      if Object.Pointer /= null then
-         if Object.Own_Pointer then
-            Free (Object.Pointer);
-         end if;
-
-         Object.Pointer := null;
-      end if;
-   end Finalize;
+      Streams.Destroy (Object.Stream);
+   end Destroy;
 
 end JSON.Parsers;

@@ -1,2 +1,10 @@
 pragma Restrictions (No_Obsolescent_Features);
-pragma Profile (No_Implementation_Extensions);
+
+--  Allow 'Old in potentially unevaluated contract expressions
+pragma Unevaluated_Use_Of_Old (Allow);
+
+--  No_Implementation_Extensions is not used because SPARK_Mode and other
+--  SPARK annotations ('Loop_Entry, Subprogram_Variant, ...) are
+--  implementation-defined aspects, attributes, and pragmas
+pragma Restrictions (No_Implementation_Identifiers);
+pragma Restrictions (No_Implementation_Units);
