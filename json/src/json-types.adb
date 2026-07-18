@@ -15,7 +15,11 @@
 --  limitations under the License.
 
 with Ada.Characters.Latin_1;
+--  Big_Integers is an Ada 2022 standard unit; silence GNAT 16's advisory
+--  (-gnatwi) about referencing it from this library's earlier language mode.
+pragma Warnings (Off, "* is an Ada 2022 unit");
 with Ada.Numerics.Big_Numbers.Big_Integers;
+pragma Warnings (On, "* is an Ada 2022 unit");
 with Ada.Unchecked_Deallocation;
 
 package body JSON.Types with SPARK_Mode => On is
