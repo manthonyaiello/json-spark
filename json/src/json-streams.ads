@@ -70,7 +70,8 @@ package JSON.Streams with SPARK_Mode => On is
 
    procedure Destroy (Object : in out String_Buffer)
      with Always_Terminates,
-          Post => Length (Object) = 0 and not Has_Storage (Object);
+          Post => Length (Object) = 0 and not Has_Storage (Object),
+          Depends => (Object => null, null => Object);
    --  Release the heap memory owned by the buffer, leaving it empty; the
    --  buffer then owns no heap memory
    --
@@ -244,7 +245,8 @@ package JSON.Streams with SPARK_Mode => On is
           Post =>
        Length (Object) = 0
          and not Has_Buffered_Character (Object)
-         and not Has_Storage (Object);
+         and not Has_Storage (Object),
+          Depends => (Object => null, null => Object);
    --  Release the text owned by the stream; the stream then owns no heap
    --  memory
    --
