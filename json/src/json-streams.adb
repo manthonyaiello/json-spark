@@ -228,6 +228,7 @@ package body JSON.Streams with SPARK_Mode => On is
    begin
       Object.Index := 1;
       Object.Has_Next := False;
+      Object.Next_Character := ' ';
       Free_Text (Object.Text);
    end Destroy;
 

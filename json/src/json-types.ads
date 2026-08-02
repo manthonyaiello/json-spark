@@ -375,7 +375,8 @@ package JSON.Types with SPARK_Mode => On is
 
    procedure Free (Object : in out JSON_Value_Access)
      with Always_Terminates,
-          Post => Object = null;
+          Post => Object = null,
+          Depends => (Object => null, null => Object);
    --  Release the value and everything it owns
    --  @param Object The value to release; set to null on return (a null
    --    value is accepted and is a no-op)
