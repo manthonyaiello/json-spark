@@ -119,6 +119,67 @@ and making backporting fixes harder.
   header. Contributions created in whole by you should be licensed under
   the main license of the project, as specified in the [README][url-readme].
 
+## The trust surface
+
+The `json` library is SPARK, proved to Silver (absence of run-time
+errors, `--level=2`), with nothing unproved.
+[`scripts/trust-surface.txt`][url-manifest] lists every site in
+`json/src` that the proof does not cover:
+
+* code outside SPARK — `SPARK_Mode => Off`
+* assumptions the prover takes on faith — `pragma Assume`, and any
+  `False_Positive` or `Intentional` justification
+* suppressions — `pragma Warnings (Off)`, `Unreferenced`, `Unmodified`,
+  `Suppress`
+* the foreign code behind any binding — the imports, and any C or Rust
+  bodies
+
+Today only the third of those is populated: three entries, all warning
+suppressions. Suppressions are on the list because the build is
+warnings-as-errors (`-gnatwe`) and `make prove-check` fails on any
+GNATprove warning. A suppression is the only way to leave a warning
+standing, which makes it a claim, made by hand, that the tool is wrong
+about that line.
+
+A contribution is **not expected** to add to that list. Where one
+genuinely must, add the entry with a one-sentence justification in its
+fourth field, and say so in the pull request. A reviewer will read that
+sentence; an entry with an empty fourth field fails the gate.
+
+```sh
+make trust         # list the derived set, in manifest form
+make trust-check   # the same set as a gate: any drift from the manifest exits 1
+```
+
+The gate is grep over `git ls-files`, so it needs no toolchain and runs
+on a bare checkout. `json/gnat.adc` sets `pragma SPARK_Mode (On)`, so a
+unit outside SPARK has to say so at its own declaration; the per-unit
+aspects are kept as well, because the configuration pragma sets the
+default and the aspect is what a reader sees at the declaration.
+
+The manifest covers only **markered** sites. Something the proof does
+not cover and no pragma marks is invisible to the gate, so the gate's
+silence is not proof of completeness. There is a real example in this
+tree, recorded under "Accepted limitations" in
+[`json/proof-status.md`][url-proof-status] rather than in the manifest,
+because there is nothing to grep for: reusing a `Parser` or `Stream` via
+`Create` without `Destroy` leaks the previous text, since out-mode
+access components carry no entry-side ownership.
+
+#### **Before opening a pull request**
+
+```sh
+make build         # build the library and the tools
+make tests         # the AUnit unit drivers
+make check-readme  # the README example still compiles against the API
+make trust-check   # the trust surface is unchanged
+make prove-check   # Silver, gated on the expected-failure baseline
+make docs-check    # every entity documented, every doc block placed right
+```
+
+Why the surface is budgeted rather than forbidden, and what the gate
+cannot see, are in [`docs/design/0001-the-trust-surface.md`][url-trust-adr].
+
 ## Developer Certificate of Origin
 
 By making a contribution to this project, I certify that:
@@ -143,3 +204,6 @@ indefinitely and may be redistributed consistent with this project or
 the open source license(s) involved.
 
   [url-readme]: /README.md
+  [url-manifest]: /scripts/trust-surface.txt
+  [url-proof-status]: /json/proof-status.md
+  [url-trust-adr]: /docs/design/0001-the-trust-surface.md

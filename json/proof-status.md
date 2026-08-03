@@ -6,9 +6,10 @@ CAMPAIGN COMPLETE (2026-07-12; extended 2026-07-14 with \uXXXX escape
 support, v7.1.0, and again 2026-07-14 with termination and reclamation
 contracts, and a Parse result-shape postcondition). The `json` library
 crate is at SPARK Silver: the latest whole-project run
-(`gnatprove -P json_prove.gpr -j0 --level=2`, GNATprove FSF 15.0)
-reports 1166 checks, all proved (197 flow, 969 provers, incl. 126
-termination checks), 0 unproved, 0 justified, and no warnings. The
+(`gnatprove -P json_prove.gpr -j0 --level=2`, GNATprove FSF 16.1.0)
+reports 1175 checks, all proved (203 flow, 972 provers, incl. 126
+termination checks), 0 unproved, 0 justified, and no warnings (the run
+is `--warnings=error`). The
 103-test AUnit suite passes and the pretty_print tool works against the
 new API. Replay with `make prove` from the repository root.
 
@@ -81,9 +82,9 @@ power-of-ten divisor batching (single rounding for common decimals).
       is semantically exact and documented); preconditions over defensive
       code throughout; kind constraints carried by Pre, span validity by
       the public Valid_Span/Length/Position contracts; 0 proof
-      justifications. Flow-warning suppressions are localized and carry
-      Reason strings (deallocation-not-modeled in json-parsers.adb;
-      unannotated Ada.Streams.Stream_IO in json-streams.adb From_File).
+      justifications. Warning suppressions are localized and carry Reason
+      strings; scripts/trust-surface.txt is the gated source of truth for
+      what they are and why each one stands.
 
 ## Accepted limitations (documented in the sources)
 

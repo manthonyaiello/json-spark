@@ -249,6 +249,38 @@ $ make tests
 $ make coverage
 ```
 
+## Trust surface
+
+```
+$ make trust         # list every site the proof does not cover
+$ make trust-check   # the same set as a gate: any drift from the manifest exits 1
+```
+
+`scripts/trust-surface.txt` lists every site a proof of this library does
+not cover, each with a justification. Here that list is short and of a
+single kind — three entries, all warning suppressions. `json/src` has no
+`SPARK_Mode => Off`, no `pragma Assume`, no GNATprove justification, no
+foreign import and no native source.
+
+The build is warnings-as-errors (`-gnatwe`) and `make prove-check` fails
+on any GNATprove warning, so a warning can only be left standing by a
+suppression the manifest then has to name. `json/gnat.adc` sets
+`pragma SPARK_Mode (On)`, so a unit outside SPARK has to say so at its own
+declaration. The gate is grep over `git ls-files` and needs no toolchain,
+so CI runs it on a bare checkout.
+
+The public API is three generics, and GNATprove analyses a generic only
+through an instantiation, so what is proved is the actuals in
+`json/prove/proof_harness.ads`: `JSON.Types` with `Long_Integer`,
+`Long_Float` and the default `Maximum_Number_Length => 30`, and
+`JSON.Parsers` over it both with and without `Check_Duplicate_Keys`. We
+have proved those actuals; SPARK will prove yours when you instantiate the
+generics in your own use case.
+
+Contributions are not expected to add to the manifest. See
+[CONTRIBUTING.md][url-contributing] and, for the reasoning,
+[`docs/design/0001-the-trust-surface.md`][url-trust-adr].
+
 ## Differences from json-ada
 
 This fork is **not** a drop-in replacement for [json-ada][url-upstream];
@@ -293,3 +325,4 @@ refers to this license:
   [url-rfc]: https://tools.ietf.org/html/rfc7159
   [url-apache]: https://opensource.org/licenses/Apache-2.0
   [url-contributing]: /CONTRIBUTING.md
+  [url-trust-adr]: /docs/design/0001-the-trust-surface.md
