@@ -20,11 +20,17 @@ with AUnit.Test_Fixtures;
 package Test_Streams is
 
    function Suite return AUnit.Test_Suites.Access_Test_Suite;
+   --  Return the suite of test cases exercising JSON.Streams
+   --  @return The suite, owned by this package
 
 private
 
    type Test is new AUnit.Test_Fixtures.Test_Fixture with null record;
+   --  The fixture the cases below run against; they need no state of
+   --  their own
 
    procedure Test_Stream_IO (Object : in out Test);
+   --  Parse float_number.txt
+   --  @param Object The fixture the case runs against
 
 end Test_Streams;
