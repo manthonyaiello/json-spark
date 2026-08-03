@@ -253,14 +253,14 @@ package body JSON.Tokenizers with SPARK_Mode => On is
       subtype Base_Integer is Types.Integer_Type'Base;
       subtype Base_Float is Types.Float_Type'Base;
 
+      Mantissa_Limit : constant Base_Float := Base_Float'Last / 16.0;
       --  Base_Float'Last / 16.0 is exact (division by a power of two),
       --  which makes the overflow guards below provable
-      Mantissa_Limit : constant Base_Float := Base_Float'Last / 16.0;
 
+      Exp_Limit : constant := 100_000;
       --  Beyond this value the exponent saturates: the result is the
       --  same (zero, or out of range) for all larger exponents, because
       --  the mantissa has at most Maximum_Number_Length digits
-      Exp_Limit : constant := 100_000;
 
       C   : Character;
       EOF : Boolean;

@@ -29,7 +29,10 @@ private
    --  The fixture the cases below run against; they need no state of
    --  their own
 
-   --  Keyword
+   -----------------------------------------------------------------------------
+   --                                 Keyword                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_True_Text (Object : in out Test);
    --  Image 'true'
    --  @param Object The fixture the case runs against
@@ -43,7 +46,10 @@ private
    --  Image '"BS CR LF \ / HT"'
    --  @param Object The fixture the case runs against
 
-   --  String
+   -----------------------------------------------------------------------------
+   --                                  String                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_String_Text (Object : in out Test);
    --  Image '""'
    --  @param Object The fixture the case runs against
@@ -54,12 +60,18 @@ private
    --  Image '"12.34"'
    --  @param Object The fixture the case runs against
 
-   --  Integer number
+   -----------------------------------------------------------------------------
+   --                              Integer number                             --
+   -----------------------------------------------------------------------------
+
    procedure Test_Integer_Number_Text (Object : in out Test);
    --  Image '42'
    --  @param Object The fixture the case runs against
 
-   --  Array
+   -----------------------------------------------------------------------------
+   --                                  Array                                  --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Array_Text (Object : in out Test);
    --  Image '[]'
    --  @param Object The fixture the case runs against
@@ -70,7 +82,10 @@ private
    --  Image '[3.14, true]'
    --  @param Object The fixture the case runs against
 
-   --  Object
+   -----------------------------------------------------------------------------
+   --                                  Object                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Object_Text (Object : in out Test);
    --  Image '{}'
    --  @param Object The fixture the case runs against
