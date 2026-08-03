@@ -98,6 +98,14 @@ exiting 0 while the warning scrolls past. The script therefore keeps
 `gnatprove`'s own exit status and fails on it, and tees the run to a log because
 `gnatprove.out` carries the summary only and cannot say what was rejected.
 
+The proof also runs `--proof-warnings=on`, which is off by default. It widens
+what there is to be fatal about: a warning derived *by proof* — a dead branch, an
+unreachable precondition, an inconsistent assumption — where flow analysis alone
+finds none of those. It needs no gating logic of its own, because a proof warning
+is a warning and `--warnings=error` already carries it. The tree is at
+1175/1175 proved with the switch on and nothing new reported, so the switch costs
+nothing today; it is on now precisely because that is when adoption is free.
+
 ## What is proved, and what a client instantiates
 
 The public API is three generics, and GNATprove analyses a generic only through
@@ -149,7 +157,7 @@ minutes late rather than at the root.
 - `json/json.gpr`, `json/json_prove.gpr`, `tests/json_tests.gpr` — `-gnatwe`.
   `tools/json_tools.gpr` and `tools/readme_example.gpr` inherit it, since both
   do `package Compiler renames JSON.Compiler`.
-- `scripts/check-proof.sh` — `--warnings=error`, and the exit status that makes
-  it bite.
+- `scripts/check-proof.sh` — `--warnings=error` and `--proof-warnings=on`, and
+  the exit status that makes them bite.
 - `.github/CODEOWNERS` — review routing for all of the above.
 - `CONTRIBUTING.md` — the same rule, for someone who has not read this.

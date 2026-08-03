@@ -16,8 +16,13 @@ clean: ## Remove build, proof, doc and coverage artifacts
 	rm -rf json/build tests/build tools/build tests/TEST-*.xml
 	rm -rf docs/api gnatdoc-run.txt
 
+# --proof-warnings=on is off by default in GNATprove and diagnoses by proof what
+# --warnings=error only makes fatal once flow analysis has found it: a dead
+# branch, an unreachable precondition, an inconsistent assumption. Both switches
+# have to agree with scripts/check-proof.sh, which is the gate.
 prove: prove-deps ## Prove the library to SPARK Silver -- AoRTE (--level=2)
-	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error --output=oneline --output-header
+	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 \
+	  --warnings=error --proof-warnings=on --output=oneline --output-header
 
 prove-check: prove-deps ## `prove` as a gate: drift from scripts/proof-xfail.txt => exit 1
 	ALR="$(ALR)" ./scripts/check-proof.sh

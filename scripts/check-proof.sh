@@ -28,6 +28,11 @@
 # --warnings=error on its own is toothless here. GP_STATUS is what makes it
 # bite.
 #
+# --proof-warnings=on widens what there is to catch: it diagnoses by proof
+# (dead branch, unreachable precondition, inconsistent assumption) rather than
+# by flow analysis. It needs no gating logic of its own -- a proof warning is a
+# warning, so --warnings=error and GP_STATUS already carry it.
+#
 # GNATprove 16 also emits a two-line diagnostic (` warning: <text>` then
 # `--> file:line:col`), so a grep written for `file:line:col: warning:` matches
 # nothing and passes forever. Hence the tool's own switch rather than a filter
@@ -65,7 +70,8 @@ RUNLOG="json/build/gnatprove-run.txt"
 UPDATE=0
 [ "${1:-}" = "--update" ] && UPDATE=1
 
-echo ">> alr exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error $EXTRA"
+echo ">> alr exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error" \
+     "--proof-warnings=on $EXTRA"
 # GNATprove exits non-zero when checks are unproved. We do our own gating from
 # gnatprove.out below, so don't let its exit status abort the script here -- but
 # do keep it, in GP_STATUS, for the final gate. The crate lives in json/, so run
@@ -75,7 +81,7 @@ echo ">> alr exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error 
 mkdir -p "$(dirname "$RUNLOG")"
 set +e
 ( cd json && "$ALR" exec -- gnatprove -P json_prove.gpr -j0 --level=2 \
-    --warnings=error $EXTRA ) 2>&1 | tee "$RUNLOG"
+    --warnings=error --proof-warnings=on $EXTRA ) 2>&1 | tee "$RUNLOG"
 GP_STATUS=${PIPESTATUS[0]}
 set -e
 
