@@ -2,7 +2,8 @@ ALR      ?= alr
 ALR_CLEAN = $(ALR) clean -- -p
 ALR_BUILD = $(ALR) build --development --profiles="*=development"
 
-.PHONY: build clean prove prove-check tests check-readme coverage
+.PHONY: build clean prove prove-check tests check-readme coverage \
+        trust trust-check
 
 build:
 	cd json && $(ALR_BUILD)
@@ -30,3 +31,12 @@ tests:
 coverage:
 	mkdir -p tests/build/cov
 	gcovr --exclude test --html-nested tests/build/cov/coverage.html
+
+# grep over `git ls-files`, so these need no toolchain and run on a bare
+# checkout. That is what lets CI gate on the trust surface before anything
+# compiles.
+trust:
+	./scripts/check-trust-surface.sh --list
+
+trust-check:
+	./scripts/check-trust-surface.sh

@@ -20,6 +20,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # No toolchain: the gate is grep over `git ls-files`, so it runs on a bare
+  # checkout in seconds. Making it the root of the job graph (so it fails before
+  # anything compiles) is deliberately left to the CI-DAG change.
+  trust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fails if json/src holds a suppression, SPARK_Mode => Off, pragma Assume,
+      # GNATprove justification, foreign import or native source that
+      # scripts/trust-surface.txt does not name and justify -- and equally if the
+      # manifest names one the tree no longer has.
+      - name: Check trust surface
+        run: make trust-check
+
   build-test-prove:
     runs-on: ubuntu-latest
     steps:

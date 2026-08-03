@@ -1,0 +1,20 @@
+# trust-surface.txt — every site a proof of this tree does not cover.
+#
+# One entry per site, checked by scripts/check-trust-surface.sh:
+#
+#     kind | path | entity | why no SPARK formulation works
+#
+# `entity` is `-` for the file-level kinds. The fourth field is required and is
+# what a reviewer reads. See CONTRIBUTING.md and
+# docs/design/0001-the-trust-surface.md.
+#
+# Scope is the shipped library, json/src. Every entry here is a suppression:
+# json/src has no SPARK_Mode => Off, no pragma Assume, no GNATprove
+# False_Positive or Intentional justification, no foreign import and no native
+# source. A key is `kind | path | entity`, not a line, so several physical
+# pragmas on one entity share one entry and the manifest survives an edit above
+# them. Each justification below covers every pragma it merges.
+
+warning-off      | json/src/json-streams.adb    | From_File      | Ada.Streams.Stream_IO carries no SPARK contracts, so GNATprove must assume Open, Size, Read and Close read and write no global state and always terminate, and it sees Close as a statement with no effect that leaves a File nobody reads again; the file system is outside the proof boundary and no contract can be added to a predefined unit to bring it inside.
+warning-off      | json/src/json-parsers.adb    | JSON.Parsers   | Parse_Value and Scan_Token report through a Status/Detail out-parameter pair that Parse reads only on the failure path, so on the success path flow analysis correctly sees Detail written and never read, and sees the token from the final Expect_EOF scan discarded; the write is inherent to the reporting protocol, not a defect.
+warning-off      | json/src/json-types.adb      | JSON.Types     | Ada.Numerics.Big_Numbers.Big_Integers is an Ada 2022 unit and this library does not compile in Ada 2022 mode, which GNAT 16 flags advisorily under -gnatwi; the reference is legal and is confined to the ghost Size measure that proves Free and Reverse_Elements terminate.
