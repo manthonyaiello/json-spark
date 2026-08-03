@@ -176,7 +176,10 @@ package body Test_Tokenizers is
          Fail ("Expected EOF");
    end Expect_EOF;
 
-   --  Keyword
+   -----------------------------------------------------------------------------
+   --                                 Keyword                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Null_Token (Object : in out Test) is
       Text : constant String := "null";
       Stream : Streams.Stream;
@@ -215,7 +218,10 @@ package body Test_Tokenizers is
       Streams.Destroy (Stream);
    end Test_False_Token;
 
-   --  String
+   -----------------------------------------------------------------------------
+   --                                  String                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_String_Token (Object : in out Test) is
       Text : constant String := """""";
       Stream : Streams.Stream;
@@ -328,7 +334,10 @@ package body Test_Tokenizers is
       Streams.Destroy (Stream);
    end Test_Escaped_Unicode_Surrogate_Pair_String_Token;
 
-   --  Integer/Float number
+   -----------------------------------------------------------------------------
+   --                           Integer/Float number                          --
+   -----------------------------------------------------------------------------
+
    procedure Test_Zero_Number_Token (Object : in out Test) is
       Text : constant String := "0";
       Stream : Streams.Stream;
@@ -420,7 +429,10 @@ package body Test_Tokenizers is
       Streams.Destroy (Stream);
    end Test_Float_Negative_Exponent_Number_Token;
 
-   --  Array
+   -----------------------------------------------------------------------------
+   --                                  Array                                  --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Array_Tokens (Object : in out Test) is
       Text : constant String := "[]";
       Stream : Streams.Stream;
@@ -483,7 +495,10 @@ package body Test_Tokenizers is
       Streams.Destroy (Stream);
    end Test_Two_Elements_Array_Tokens;
 
-   --  Object
+   -----------------------------------------------------------------------------
+   --                                  Object                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Object_Tokens (Object : in out Test) is
       Text : constant String := "{}";
       Stream : Streams.Stream;
@@ -578,7 +593,10 @@ package body Test_Tokenizers is
       Streams.Destroy (Stream);
    end Test_Two_Pairs_Object_Tokens;
 
-   --  Exceptions
+   -----------------------------------------------------------------------------
+   --                                Exceptions                               --
+   -----------------------------------------------------------------------------
+
    procedure Test_Control_Character_String_Exception (Object : in out Test) is
       LF : Character renames Ada.Characters.Latin_1.LF;
       Text : constant String := """no" & LF & "newline""";

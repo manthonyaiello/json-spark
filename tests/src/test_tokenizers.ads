@@ -29,7 +29,10 @@ private
    --  The fixture the cases below run against; they need no state of
    --  their own
 
-   --  Keyword
+   -----------------------------------------------------------------------------
+   --                                 Keyword                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Null_Token (Object : in out Test);
    --  Tokenize text 'null'
    --  @param Object The fixture the case runs against
@@ -40,7 +43,10 @@ private
    --  Tokenize text 'false'
    --  @param Object The fixture the case runs against
 
-   --  String
+   -----------------------------------------------------------------------------
+   --                                  String                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_String_Token (Object : in out Test);
    --  Tokenize text '""'
    --  @param Object The fixture the case runs against
@@ -66,7 +72,10 @@ private
    --  Tokenize text '"\ud834\udd1e"'
    --  @param Object The fixture the case runs against
 
-   --  Integer/float number
+   -----------------------------------------------------------------------------
+   --                           Integer/float number                          --
+   -----------------------------------------------------------------------------
+
    procedure Test_Zero_Number_Token (Object : in out Test);
    --  Tokenize text '0'
    --  @param Object The fixture the case runs against
@@ -89,7 +98,10 @@ private
    --  Tokenize text '4e-1'
    --  @param Object The fixture the case runs against
 
-   --  Array
+   -----------------------------------------------------------------------------
+   --                                  Array                                  --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Array_Tokens (Object : in out Test);
    --  Tokenize text '[]'
    --  @param Object The fixture the case runs against
@@ -100,7 +112,10 @@ private
    --  Tokenize text '[1,2]'
    --  @param Object The fixture the case runs against
 
-   --  Object
+   -----------------------------------------------------------------------------
+   --                                  Object                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Object_Tokens (Object : in out Test);
    --  Tokenize text '{}'
    --  @param Object The fixture the case runs against
@@ -111,7 +126,10 @@ private
    --  Tokenize text '{"foo": true,"bar":false}'
    --  @param Object The fixture the case runs against
 
-   --  Exceptions
+   -----------------------------------------------------------------------------
+   --                                Exceptions                               --
+   -----------------------------------------------------------------------------
+
    procedure Test_Control_Character_String_Exception (Object : in out Test);
    --  Reject text '"no\nnewline"'
    --  @param Object The fixture the case runs against

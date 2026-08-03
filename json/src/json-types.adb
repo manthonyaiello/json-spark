@@ -57,9 +57,9 @@ package body JSON.Types with SPARK_Mode => On is
       Result : String (1 .. Text'Length) := (others => ' ');
       Last   : Natural := 0;
 
+      Skip : Natural := 0;
       --  Number of characters of Text already consumed as part of a
       --  multi-character escape sequence and still to be stepped over
-      Skip : Natural := 0;
 
       function To_Hex_Digit (Value : Character) return Natural is
         (case Value is

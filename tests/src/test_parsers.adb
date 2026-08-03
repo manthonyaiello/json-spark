@@ -268,9 +268,9 @@ package body Test_Parsers is
    procedure Test_Escaped_Unicode_Two_Byte_String_Text (Object : in out Test) is
       Text : constant String := """\u00e9""";
 
-      --  U+00E9 encoded as UTF-8
       Expected : constant String :=
         Character'Val (16#C3#) & Character'Val (16#A9#);
+      --  U+00E9 encoded as UTF-8
 
       Parser   : Parsers.Parser;
       Document : aliased JSON_Value_Access;
@@ -289,9 +289,9 @@ package body Test_Parsers is
    procedure Test_Escaped_Unicode_Three_Byte_String_Text (Object : in out Test) is
       Text : constant String := """\u20ac""";
 
-      --  U+20AC encoded as UTF-8
       Expected : constant String :=
         Character'Val (16#E2#) & Character'Val (16#82#) & Character'Val (16#AC#);
+      --  U+20AC encoded as UTF-8
 
       Parser   : Parsers.Parser;
       Document : aliased JSON_Value_Access;
@@ -310,10 +310,10 @@ package body Test_Parsers is
    procedure Test_Escaped_Unicode_Surrogate_Pair_String_Text (Object : in out Test) is
       Text : constant String := """\ud834\udd1e""";
 
-      --  U+1D11E (musical symbol G clef) encoded as UTF-8
       Expected : constant String :=
         Character'Val (16#F0#) & Character'Val (16#9D#)
           & Character'Val (16#84#) & Character'Val (16#9E#);
+      --  U+1D11E (musical symbol G clef) encoded as UTF-8
 
       Parser   : Parsers.Parser;
       Document : aliased JSON_Value_Access;

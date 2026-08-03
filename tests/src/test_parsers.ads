@@ -29,7 +29,10 @@ private
    --  The fixture the cases below run against; they need no state of
    --  their own
 
-   --  Keyword
+   -----------------------------------------------------------------------------
+   --                                 Keyword                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_True_Text (Object : in out Test);
    --  Parse text 'true'
    --  @param Object The fixture the case runs against
@@ -40,7 +43,10 @@ private
    --  Parse text 'null'
    --  @param Object The fixture the case runs against
 
-   --  String
+   -----------------------------------------------------------------------------
+   --                                  String                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_String_Text (Object : in out Test);
    --  Parse text '""'
    --  @param Object The fixture the case runs against
@@ -66,7 +72,10 @@ private
    --  Parse text '"\ud834\udd1e"'
    --  @param Object The fixture the case runs against
 
-   --  Integer/float number
+   -----------------------------------------------------------------------------
+   --                           Integer/float number                          --
+   -----------------------------------------------------------------------------
+
    procedure Test_Integer_Number_Text (Object : in out Test);
    --  Parse text '42'
    --  @param Object The fixture the case runs against
@@ -77,7 +86,10 @@ private
    --  Parse text '3.14'
    --  @param Object The fixture the case runs against
 
-   --  Array
+   -----------------------------------------------------------------------------
+   --                                  Array                                  --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Array_Text (Object : in out Test);
    --  Parse text '[]'
    --  @param Object The fixture the case runs against
@@ -94,7 +106,10 @@ private
    --  Iterate over '{"foo":[1, "2"],"bar":[0.271e1]}'
    --  @param Object The fixture the case runs against
 
-   --  Object
+   -----------------------------------------------------------------------------
+   --                                  Object                                 --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Object_Text (Object : in out Test);
    --  Parse text '{}'
    --  @param Object The fixture the case runs against
@@ -122,7 +137,10 @@ private
    --  Test getting object from text '{}'
    --  @param Object The fixture the case runs against
 
-   --  Exceptions
+   -----------------------------------------------------------------------------
+   --                                Exceptions                               --
+   -----------------------------------------------------------------------------
+
    procedure Test_Empty_Text_Exception (Object : in out Test);
    --  Reject text ''
    --  @param Object The fixture the case runs against
