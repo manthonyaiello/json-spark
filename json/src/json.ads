@@ -14,6 +14,6 @@
 --  See the License for the specific language governing permissions and
 --  limitations under the License.
 
-package JSON is
+package JSON with SPARK_Mode => On is
    pragma Pure;
 end JSON;
