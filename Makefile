@@ -2,7 +2,7 @@ ALR      ?= alr
 ALR_CLEAN = $(ALR) clean -- -p
 ALR_BUILD = $(ALR) build --development --profiles="*=development"
 
-.PHONY: build clean prove prove-check tests check-readme coverage \
+.PHONY: build clean prove prove-check prove-deps tests check-readme coverage \
         trust trust-check docs docs-check docs-deps docs-placement help
 
 build: ## Build the library and the tools crate
@@ -16,11 +16,22 @@ clean: ## Remove build, proof, doc and coverage artifacts
 	rm -rf json/build tests/build tools/build tests/TEST-*.xml
 	rm -rf docs/api gnatdoc-run.txt
 
-prove: ## Prove the library to SPARK Silver -- AoRTE (--level=2)
+prove: prove-deps ## Prove the library to SPARK Silver -- AoRTE (--level=2)
 	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error --output=oneline --output-header
 
-prove-check: ## `prove` as a gate: drift from scripts/proof-xfail.txt => exit 1
+prove-check: prove-deps ## `prove` as a gate: drift from scripts/proof-xfail.txt => exit 1
 	ALR="$(ALR)" ./scripts/check-proof.sh
+
+# json_prove.gpr withs config/json_config.gpr, which Alire generates rather than
+# tracks, and `alr exec` does not generate it -- only a build does. Without this
+# the proof cannot run on a bare checkout, which is exactly what it gets in CI
+# now that proof is its own job rather than a step after `build`.
+#
+# --stop-after=generation stops before compilation: gnatprove does its own
+# frontend pass over the sources, so the proof needs the config project on disk
+# and nothing compiled or linked. json has no dependencies to sync.
+prove-deps: ## Provision what gnatprove reads (config GPR), no build
+	cd json && $(ALR_BUILD) --stop-after=generation
 
 check-readme: ## Compile the README example against the library
 	ALR="$(ALR)" ./scripts/check-readme-example.sh
