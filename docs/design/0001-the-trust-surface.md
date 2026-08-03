@@ -184,7 +184,11 @@ minutes late rather than at the root.
 - `json/gnat.adc` — SPARK as the default.
 - `json/json.gpr`, `json/json_prove.gpr`, `tests/json_tests.gpr` — `-gnatwe`.
   `tools/json_tools.gpr` and `tools/readme_example.gpr` inherit it, since both
-  do `package Compiler renames JSON.Compiler`.
+  do `package Compiler renames JSON.Compiler`. That rename carries
+  `Local_Configuration_Pragmas` too, so the `tools` sources are compiled against
+  `json/gnat.adc` — including its `pragma SPARK_Mode (On)`, which
+  `tools/src/pretty_print.adb` satisfies. A `gnat.adc` beside
+  `tools/json_tools.gpr` would never be read; there is deliberately no such file.
 - `scripts/check-proof.sh` — `--warnings=error` and `--proof-warnings=on`, and
   the exit status that makes them bite.
 - `.github/CODEOWNERS` — review routing for all of the above.
