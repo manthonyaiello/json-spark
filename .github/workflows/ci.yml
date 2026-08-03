@@ -1,17 +1,39 @@
 name: CI
 
 # Build, test, prove, and document the json crate on every push to master and
-# every PR. Doc-only changes are skipped.
+# every PR. The four signals form a graph, cheapest gate first:
+#
+#     trust --> docs --> build-test
+#                    --> prove
+#
+# `trust` needs no toolchain at all — grep over `git ls-files` — so it is the
+# cheapest signal by an order of magnitude and reports in seconds. A PR that
+# widens what the proof does not cover is answered before a runner spends a build
+# on it.
+#
+# `docs` is the second gate. Be honest about what the edge buys: the docs job has
+# to provision and parse the sources either way, so what gating actually saves is
+# the test run and the prover — worth it, because an undocumented entity means
+# the tree is not worth spending the prover on.
+#
+# `build-test` and `prove` are siblings with NO edge between them, deliberately:
+# proof needs the sources to compile, which it arranges for itself, not the tests
+# to pass. When something is broken we want both signals in the same run instead
+# of one hiding the other. That argument does not extend to `docs`, which is why
+# `docs` is a gate and this is not.
+#
+# Every push and every PR gets a run: there is no `paths-ignore`. README.md is a
+# source of this project — the readme_example root compiles a snippet extracted
+# from it, and both `make check-readme` and `make docs-check` gate on it — and
+# scripts/trust-surface.txt is itself gated content, so a "doc-only" change can
+# break a gate. Running always also removes the cancel hazard at its root:
+# cancel-in-progress can then only cancel a genuinely superseded run on the same
+# ref, never leave a commit that nothing ever gated. The cost is absorbed by the
+# two gates that need no toolchain.
 on:
   push:
     branches: [master]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
   workflow_dispatch:
 
 # Cancel an in-flight run when a new commit lands on the same ref.
@@ -19,15 +41,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege. Every job only reads the repo: there is no cache to restore,
+# save or purge here, so nothing needs `actions: write` — and granting it would
+# both over-grant and fail fork PRs outright, whose token cannot be elevated.
+permissions:
+  contents: read
+
 jobs:
-  # No toolchain: the gate is grep over `git ls-files`, so it runs on a bare
-  # checkout in seconds. Making it the root of the job graph (so it fails before
-  # anything compiles) is deliberately left to the CI-DAG change.
+  # The trust-surface gate: every site a proof of this tree does not cover must
+  # be listed, with a justification, in scripts/trust-surface.txt. Checkout and
+  # grep — no Alire, no compile — so it is the root of the graph.
   trust:
+    name: Trust surface (gate)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Fails if json/src holds a suppression, SPARK_Mode => Off, pragma Assume,
       # GNATprove justification, foreign import or native source that
@@ -36,54 +65,29 @@ jobs:
       - name: Check trust surface
         run: make trust-check
 
-  # API documentation + the doc gate (issue #7). Deliberately a SIBLING of
-  # build-test-prove with no `needs:` edge: imposing the job graph (docs ahead of
-  # build and proof, so an undocumented entity is answered before the runner
-  # spends a build on it) is issue #9's job, and putting the edge here would
-  # collide with it. Until then the two run concurrently, which costs nothing and
-  # gives both signals in the same run.
-  #
-  # Note the `paths-ignore: '**.md'` above: a README-only change does not start
-  # this workflow, yet README.md IS a source of the readme_example root (the
-  # snippet is extracted and gated like any other unit). So a README edit can
-  # break `make docs-check` without CI saying so until the next code push. Issue
-  # #9 revisits paths-ignore.
+  # API documentation + the doc gate. `build-test` and `prove` both wait on it;
+  # see the graph in the header comment for what that edge saves.
   docs:
     name: GNATdoc (gate)
+    needs: trust
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # Same pins as the job below: alr 2.x for `alr install`, and gnat_native
-      # 16.x so the sources gnatdoc parses are the ones the compiler accepts.
-      - name: Install Alire
-        uses: alire-project/setup-alire@v6.0.0
+      - name: Set up Alire toolchain
+        uses: ./.github/actions/setup-alire
         with:
-          version: 2.1.1
-          toolchain: gnat_native=16.1.0 gprbuild
+          gnatdoc: 'true'
 
-      # gnatdoc is a tool, not something json links against, so it is not a crate
-      # dependency — the same reasoning that keeps gnatprove out of alire.toml.
-      # Adding it there would make every job and every fresh local checkout fetch
-      # a binary crate it never uses, because alr materializes the whole
-      # dependency solution before building. Pinned to an exact version for the
-      # same reason the prover is: the set of warnings IS the gate, so a silent
-      # bump must not be able to change what CI accepts.
+      # THE gate, in two halves. scripts/check-docs.sh drives all four project
+      # roots and exits non-zero on any undocumented entity in our own sources;
+      # then scripts/check-doc-placement.sh exits non-zero on any doc block
+      # attributed to the wrong declaration, which the gnatdoc run cannot see
+      # (--warnings is per entity, not per declaration). Both inventories land in
+      # the job summary, so a failure is readable without opening the log.
       #
-      # 26.0.0 is the generation that pairs with FSF gnat_native 16.1.0. The
-      # gnatdoc *source* crate does not build against it (libadalang/libgpr2/vss
-      # skew) — the binary crate is what makes `make docs` possible under the 16
-      # toolchain at all.
-      - name: Install GNATdoc
-        run: |
-          alr -n install gnatdoc_bin=26.0.0
-          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
-
-      # THE gate. scripts/check-docs.sh drives all four project roots and exits
-      # non-zero on any undocumented entity in our own sources; the inventory
-      # lands in the job summary, so a failure is readable without opening the
-      # log. Its prerequisite (make docs-deps) only generates the Alire config
+      # Its prerequisite (make docs-deps) only generates the Alire config
       # projects and extracts the README example — nothing is compiled or
       # linked, so this job needs no built library and no prover.
       - name: Check documentation
@@ -94,48 +98,56 @@ jobs:
       # when the gate has just rejected something.
       - name: Upload API docs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: docs/api
 
-  build-test-prove:
+  build-test:
+    name: Build + test
+    needs: docs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # setup-alire installs alr plus the requested GNAT + gprbuild toolchain.
-      # Pin Alire 2.x: the older setup-alire@v2 default (alr 1.2.2) predates the
-      # `alr install` command and only resolves a 13.x toolchain from its index.
-      # Pin gnat_native to the 16 series so the compiler matches GNATprove 16.
-      - name: Install Alire
-        uses: alire-project/setup-alire@v6.0.0
-        with:
-          version: 2.1.1
-          toolchain: gnat_native=16.1.0 gprbuild
-
-      # GNATprove is a standalone tool (not part of the toolchain and not a
-      # solution dependency). Install 16.x into ~/.alire and put it on PATH so
-      # `alr exec -- gnatprove` finds it.
-      - name: Install GNATprove
-        run: |
-          alr -n install gnatprove^16
-          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+      - name: Set up Alire toolchain
+        uses: ./.github/actions/setup-alire
 
       - name: Build
         run: make build
 
       # Compile the Ada example from the README against the library so the
       # documented snippet can't rot out of sync with the API.
+      #
+      # This step MUST stay ahead of `make tests`: tests rebuild the library
+      # with ADAFLAGS="--coverage -gnata", readme_example links without
+      # --coverage, and the resulting link fails on undefined ___gcov_* symbols.
       - name: Check README example
         run: make check-readme
 
       - name: Test
         run: make tests
 
+  # A sibling of build-test with no `needs:` edge, so the two run concurrently:
+  # proof depends on compilation, which it arranges for itself via prove-deps,
+  # not on a passing test run. Behind the same `docs` gate.
+  prove:
+    name: Prove (SPARK Silver)
+    needs: docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Alire toolchain
+        uses: ./.github/actions/setup-alire
+        with:
+          gnatprove: 'true'
+
       # Prove to Silver and gate on the expected-failure baseline: fails on any
-      # unproved check outside scripts/proof-xfail.txt (empty — json proves fully).
+      # unproved check outside scripts/proof-xfail.txt (empty — json proves
+      # fully).
       #
       # Local dev proves at the default --level=2 (see the Makefile). Here we add
       # --timeout=10 via GNATPROVE_EXTRA: --level timeouts are wall-clock rather

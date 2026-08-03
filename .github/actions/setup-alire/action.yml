@@ -1,0 +1,64 @@
+# Shared Alire setup, used by every job that needs a toolchain so the
+# provisioning cannot drift between them. The caller must run actions/checkout
+# BEFORE this action: a local composite action can only be resolved once its
+# file is on disk in the workspace.
+#
+# The two optional tools are inputs rather than separate copies of this file, so
+# a job asks for what it needs and the pins live in exactly one place.
+name: Set up Alire toolchain
+description: >-
+  Install Alire (alr) and the GNAT / gprbuild toolchain, optionally with
+  GNATprove or GNATdoc.
+
+inputs:
+  gnatprove:
+    description: Install gnatprove^16 and put it on PATH.
+    required: false
+    default: 'false'
+  gnatdoc:
+    description: Install gnatdoc_bin=26.0.0 and put it on PATH.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # setup-alire installs alr plus the requested GNAT + gprbuild toolchain.
+    # Pin Alire 2.x: the older setup-alire@v2 default (alr 1.2.2) predates the
+    # `alr install` command and only resolves a 13.x toolchain from its index.
+    # Pin gnat_native to the 16 series so the compiler matches GNATprove 16, and
+    # so the sources gnatdoc parses are the ones the compiler accepts.
+    - name: Install Alire
+      uses: alire-project/setup-alire@v6.0.0
+      with:
+        version: 2.1.1
+        toolchain: gnat_native=16.1.0 gprbuild
+
+    # GNATprove is a standalone tool (not part of the toolchain and not a
+    # solution dependency). Install 16.x into ~/.alire and put it on PATH so
+    # `alr exec -- gnatprove` finds it.
+    - name: Install GNATprove
+      if: inputs.gnatprove == 'true'
+      shell: bash
+      run: |
+        alr -n install gnatprove^16
+        echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+
+    # gnatdoc is a tool, not something json links against, so it is not a crate
+    # dependency — the same reasoning that keeps gnatprove out of alire.toml.
+    # Adding it there would make every job and every fresh local checkout fetch
+    # a binary crate it never uses, because alr materializes the whole
+    # dependency solution before building. Pinned to an exact version for the
+    # same reason the prover is: the set of warnings IS the gate, so a silent
+    # bump must not be able to change what CI accepts.
+    #
+    # 26.0.0 is the generation that pairs with FSF gnat_native 16.1.0. The
+    # gnatdoc *source* crate does not build against it (libadalang/libgpr2/vss
+    # skew) — the binary crate is what makes `make docs` possible under the 16
+    # toolchain at all.
+    - name: Install GNATdoc
+      if: inputs.gnatdoc == 'true'
+      shell: bash
+      run: |
+        alr -n install gnatdoc_bin=26.0.0
+        echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
