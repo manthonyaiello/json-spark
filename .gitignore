@@ -3,3 +3,9 @@
 build/
 alire/
 config/
+
+#  Only the *generated* GNATdoc output is an artifact; hand-written prose under
+#  docs/ would be tracked. gnatdoc-run.txt is the teed report
+#  scripts/check-docs.sh reads to set its exit status.
+/docs/api/
+/gnatdoc-run.txt
