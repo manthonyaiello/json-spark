@@ -11,7 +11,9 @@ project JSON_Prove is
    for Create_Missing_Dirs use "True";
 
    package Compiler is
-      for Default_Switches ("Ada") use Json_Config.Ada_Compiler_Switches;
+      --  -gnatwe, as in json.gpr: see the comment there.
+      for Default_Switches ("Ada") use
+        Json_Config.Ada_Compiler_Switches & ("-gnatwe");
       for Local_Configuration_Pragmas use "gnat.adc";
    end Compiler;
 

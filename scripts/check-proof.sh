@@ -17,6 +17,21 @@
 #   * FAIL if a baseline entry now proves                      -> baseline stale.
 #   * FAIL if the total unproved-check count drifts from the recorded expected
 #     count (catches an extra failing check inside an already-xfailed unit).
+#   * FAIL if gnatprove itself exited non-zero with none of the above  -> under
+#     --warnings=error that is a warning, and the only way past it is a
+#     suppression pragma, which scripts/check-trust-surface.sh then requires to
+#     be named and justified in scripts/trust-surface.txt.
+#
+# That last gate is not decoration. A GNATprove warning makes gnatprove exit
+# non-zero WITHOUT adding an unproved check, so gating on the parsed counts
+# alone would report "PROOF OK" and exit 0 while the warning scrolled past:
+# --warnings=error on its own is toothless here. GP_STATUS is what makes it
+# bite.
+#
+# GNATprove 16 also emits a two-line diagnostic (` warning: <text>` then
+# `--> file:line:col`), so a grep written for `file:line:col: warning:` matches
+# nothing and passes forever. Hence the tool's own switch rather than a filter
+# over its output.
 #
 # Usage:
 #   scripts/check-proof.sh            # prove, then gate  (exit 1 on drift)
@@ -42,17 +57,27 @@ ALR="${ALR:-alr}"
 EXTRA="${GNATPROVE_EXTRA:-}"
 XFAIL="scripts/proof-xfail.txt"
 OUT="json/build/obj/prove/gnatprove/gnatprove.out"
+# gnatprove.out carries the summary only, so the run's messages are captured
+# separately in order to report what --warnings=error rejected. json/build is
+# already covered by .gitignore.
+RUNLOG="json/build/gnatprove-run.txt"
 
 UPDATE=0
 [ "${1:-}" = "--update" ] && UPDATE=1
 
-echo ">> alr exec -- gnatprove -P json_prove.gpr -j0 --level=2 $EXTRA"
+echo ">> alr exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error $EXTRA"
 # GNATprove exits non-zero when checks are unproved. We do our own gating from
-# gnatprove.out below, so don't let its exit status abort the script here. The
-# crate lives in json/, so run the proof from there. $EXTRA is intentionally
-# unquoted so it splits into separate flags (or disappears when empty).
+# gnatprove.out below, so don't let its exit status abort the script here -- but
+# do keep it, in GP_STATUS, for the final gate. The crate lives in json/, so run
+# the proof from there. $EXTRA is intentionally unquoted so it splits into
+# separate flags (or disappears when empty).
 # shellcheck disable=SC2086
-( cd json && "$ALR" exec -- gnatprove -P json_prove.gpr -j0 --level=2 $EXTRA ) || true
+mkdir -p "$(dirname "$RUNLOG")"
+set +e
+( cd json && "$ALR" exec -- gnatprove -P json_prove.gpr -j0 --level=2 \
+    --warnings=error $EXTRA ) 2>&1 | tee "$RUNLOG"
+GP_STATUS=${PIPESTATUS[0]}
+set -e
 
 [ -f "$OUT" ] || { echo "!! no GNATprove output at $OUT" >&2; exit 2; }
 
@@ -133,6 +158,34 @@ if [ "$ACTUAL_COUNT" != "$EXPECTED_COUNT" ]; then
   echo "!! UNPROVED-COUNT DRIFT — expected ${EXPECTED_COUNT}, got ${ACTUAL_COUNT}." >&2
   echo "   (An extra check may be failing inside an already-xfailed unit.)" >&2
   rc=1
+fi
+
+# Nothing else made gnatprove fail. Under --warnings=error a warning is one of
+# these, and once the baseline accounts for every unproved check it is the only
+# remaining way for the run to fail. Gating on the parsed counts alone would let
+# it through silently.
+if [ "$rc" -eq 0 ] && [ "$GP_STATUS" -ne 0 ]; then
+  rc=1
+  echo ""
+  echo "!! GNATPROVE FAILED — exit $GP_STATUS with no unproved check outside $XFAIL." >&2
+  echo "   Under --warnings=error, a warning is an error. What it reported:" >&2
+  echo "" >&2
+  # GNATprove has two diagnostic shapes and this has to read both, because a
+  # report that comes out empty is a gate nobody can act on. json_prove.gpr sets
+  # --output=oneline, which gives "file:line:col: warning: text"; the default
+  # pretty output instead gives " warning: text" followed by " --> file:line:col"
+  # on the next line, which is why a grep written for "file:line:col: warning:"
+  # alone matches nothing and reports silence.
+  { awk '
+      /^[[:space:]]*(warning|error):/            { print; arrow = 1; next }
+      arrow && /^[[:space:]]*-->/                { print; arrow = 0; next }
+                                                 { arrow = 0 }
+      /:[0-9]+:[0-9]+:[[:space:]]*(warning|error):/ { print }
+    ' "$RUNLOG" || true; } | sed 's/^/     /' >&2
+  echo "" >&2
+  echo "   Fix it, or suppress it and add the site to scripts/trust-surface.txt" >&2
+  echo "   with a justification (see CONTRIBUTING.md)." >&2
+  exit "$rc"
 fi
 
 if [ "$rc" -eq 0 ]; then

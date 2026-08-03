@@ -19,5 +19,4 @@ json = "^7.0.0"
 json = { path = "../json" }
 
 [build-switches]
-validation.compile_checks = "warnings"
 "*".style_checks = ["-gnatygAOM120-Is"]

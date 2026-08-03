@@ -15,7 +15,7 @@ clean:
 	rm -rf json/build tests/build tests/TEST-*.xml
 
 prove:
-	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 --output=oneline --output-header
+	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error --output=oneline --output-header
 
 prove-check:
 	ALR="$(ALR)" ./scripts/check-proof.sh
