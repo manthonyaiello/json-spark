@@ -25,10 +25,17 @@ with JSON.Types;
 package Proof_Harness with SPARK_Mode => On is
 
    package Types is new JSON.Types (Long_Integer, Long_Float);
+   --  JSON.Types instantiated with the widest predefined numeric types, which
+   --  is what the tests, the tools and the README example all use
 
    package Parsers is new JSON.Parsers (Types);
+   --  JSON.Parsers in its default configuration: duplicate object keys are
+   --  accepted
 
    package Parsers_Checked is new JSON.Parsers
      (Types, Check_Duplicate_Keys => True);
+   --  JSON.Parsers with duplicate-key checking enabled. Instantiated
+   --  separately because Check_Duplicate_Keys selects a different code path in
+   --  Parse, whose proof obligations are not covered by the instance above.
 
 end Proof_Harness;
