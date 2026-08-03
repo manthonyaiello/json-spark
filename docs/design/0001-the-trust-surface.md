@@ -106,6 +106,34 @@ is a warning and `--warnings=error` already carries it. The tree is at
 1175/1175 proved with the switch on and nothing new reported, so the switch costs
 nothing today; it is on now precisely because that is when adoption is free.
 
+## The compiler bar is `-gnatwa`, and raising it is not free
+
+`-gnatwe` makes warnings fatal without widening *what* is diagnosed. That comes
+from `-gnatwa`, which the Alire development profile already sets, so the gate
+locked in the existing standard rather than raising it.
+
+Raising it was measured, letter by letter, over every `-gnatw` switch not already
+implied by `-gnatwa`. Four fire on this tree:
+
+| switch | sites | what it reports |
+| --- | --- | --- |
+| `-gnatw.y` | 163 | why a package spec needs a body |
+| `-gnatwd` | 86 | implicit dereference |
+| `-gnatwh` | 28 | a declaration hides an outer name |
+| `-gnatw.o`, `-gnatwm` | 2 | out parameter modified, value maybe unreferenced |
+
+None is free, which is the whole argument for adopting a switch while its count
+is zero. The first two are structural rather than defects — `-gnatwd` fires on
+every dereference of the access discriminants the ownership design is built on,
+and `-gnatw.y` is advisory. `-gnatwh` is the one with real value, at the price of
+28 renamings; it is a change to the sources, not to the gate, and belongs to
+whoever wants to make it.
+
+Also worth not rediscovering: `-gnatwa` *does* diagnose unreferenced locals, both
+`is never read and never assigned` and `assigned but never read`. The hole is
+narrower than it looks — a local given an initial value and then never read draws
+nothing, and no `-gnatw` letter changes that.
+
 ## What is proved, and what a client instantiates
 
 The public API is three generics, and GNATprove analyses a generic only through
