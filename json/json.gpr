@@ -17,7 +17,11 @@ project JSON is
    for Library_Kind use Library_Type;
 
    package Compiler is
-      for Default_Switches ("Ada") use Json_Config.Ada_Compiler_Switches;
+      --  -gnatwe: warnings are errors. A warning cannot be left standing, so
+      --  suppressing one is a deliberate act that scripts/check-trust-surface.sh
+      --  then requires to be named and justified in scripts/trust-surface.txt.
+      for Default_Switches ("Ada") use
+        Json_Config.Ada_Compiler_Switches & ("-gnatwe");
       for Local_Configuration_Pragmas use "gnat.adc";
    end Compiler;
 

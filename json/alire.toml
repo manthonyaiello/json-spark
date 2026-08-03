@@ -12,5 +12,4 @@ maintainers = ["M. Anthony Aiello <m.anthony.aiello@gmail.com>"]
 maintainers-logins = ["manthonyaiello"]
 
 [build-switches]
-validation.compile_checks = "warnings"
 "*".style_checks = ["-gnatygAOM120-Is"]
