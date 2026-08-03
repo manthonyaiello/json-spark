@@ -396,10 +396,34 @@ private
       First_Child   : JSON_Value_Access   := null;
       Length        : Natural             := 0;
    end record;
+   --  Full view of JSON_Value: a discriminant-free record holding the payload
+   --  of every kind, plus the two links that make a composite value's
+   --  elements a singly-linked list it owns -- First_Child down into the list
+   --  and Next along it. Only the components Kind selects are meaningful; the
+   --  rest keep their defaults.
+   --
+   --  A single record rather than a variant is what lets a node be built
+   --  before its kind is known and lets Reverse_Elements relink a list in
+   --  place, and it keeps the ownership structure GNATprove tracks to the two
+   --  access components.
+   --
    --  Str is never null when Kind = String_Kind for values built with
    --  the constructors; the observers nevertheless treat a null Str as
    --  an empty string, because a type predicate stating the property
    --  cannot be re-established by GNATprove when a container is
    --  reconstructed at the end of a borrow.
+   --  @field Kind Which of the payload components below is meaningful
+   --  @field Next The next sibling in the list of elements or members of the
+   --    composite value that owns this node, or null at the end of the list
+   --  @field Key The key of this node when it is a member of a JSON object,
+   --    in escaped form; null for array elements and for standalone values
+   --  @field Str The text of a String_Kind value, in escaped form
+   --  @field Boolean_Value The value of a Boolean_Kind value
+   --  @field Integer_Value The value of an Integer_Kind value
+   --  @field Float_Value The value of a Float_Kind value
+   --  @field First_Child The first element or member owned by an
+   --    Array_Kind or Object_Kind value, or null when it is empty
+   --  @field Length The number of elements or members of an Array_Kind or
+   --    Object_Kind value
 
 end JSON.Types;

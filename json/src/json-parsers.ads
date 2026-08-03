@@ -130,6 +130,15 @@ private
       Stream        : Streams.Stream;
       Maximum_Depth : Positive := Default_Maximum_Depth;
    end record;
+   --  Full view of Parser: the owning stream over the copied JSON text,
+   --  plus the nesting limit Parse enforces.
+   --
+   --  The heap ownership the SPARK proof reasons about lives entirely in
+   --  Stream; Has_Storage and Destroy both delegate to it.
+   --  @field Stream The stream holding the parser's copy of the JSON text,
+   --    and the sole owner of the parser's heap memory
+   --  @field Maximum_Depth Limit on the nesting depth of arrays and objects
+   --    that Parse enforces for this parser
 
    function Has_Storage (Object : Parser) return Boolean
      is (Streams.Has_Storage (Object.Stream));

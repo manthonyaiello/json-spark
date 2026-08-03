@@ -267,6 +267,24 @@ private
           Stream.Text'First = 1
             and then Stream.Text'Last < Positive'Last
             and then Stream.Index <= Stream.Text'Last + 1);
+   --  Full view of Stream: an optionally-owned text, a read cursor into it,
+   --  and a one-character pushback slot.
+   --
+   --  Text is the ownership handle the SPARK proof tracks: null means the
+   --  stream owns nothing, so Destroy is idempotent and a defaulted object
+   --  needs no finalization. The predicate is what makes the cursor
+   --  arithmetic in Next and Read_Character provably in range -- Index is
+   --  allowed to reach Text'Last + 1 (one past the end, i.e. exhausted) and
+   --  no further, and Text'Last is kept below Positive'Last so that
+   --  Index + 1 cannot overflow.
+   --  @field Text The heap-allocated JSON text, or null when the stream owns
+   --    no memory
+   --  @field Index One-based index of the next character to be read from
+   --    Text; Text'Last + 1 once the text is exhausted
+   --  @field Next_Character The character pushed back by Write_Character,
+   --    meaningful only when Has_Next is True
+   --  @field Has_Next True when Next_Character holds a pushed-back character
+   --    that has not yet been consumed
 
    function Length (Object : Stream) return Natural
      is (if Object.Text = null then 0 else Object.Text'Last);
@@ -305,6 +323,18 @@ private
         else
           String_Buffer.Text'First = 1
             and then String_Buffer.Length <= String_Buffer.Text'Last);
+   --  Full view of String_Buffer: an optionally-owned text and the length of
+   --  the prefix of it that is in use.
+   --
+   --  Text is the ownership handle the SPARK proof tracks, and Length is
+   --  deliberately independent of Text'Last: Append grows the allocation
+   --  geometrically, so the buffer's capacity is normally larger than its
+   --  contents. The predicate carries the invariant that makes the slice
+   --  Text (1 .. Length) always valid.
+   --  @field Text The heap-allocated backing store, or null when the buffer
+   --    owns no memory
+   --  @field Length Number of characters of Text currently in use; always at
+   --    most Text'Last
 
    function Length (Object : String_Buffer) return Natural is (Object.Length);
    --  Return the number of characters currently held by the buffer

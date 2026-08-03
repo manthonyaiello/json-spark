@@ -39,6 +39,8 @@ with JSON.Parsers;
 with JSON.Streams;
 with JSON.Types;
 
+--  Parse the JSON file named by the first command-line argument and print a
+--  summary of it
 procedure Example is
    package Types   is new JSON.Types (Long_Integer, Long_Float);
    package Parsers is new JSON.Parsers (Types);
