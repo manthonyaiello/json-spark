@@ -98,6 +98,42 @@ exiting 0 while the warning scrolls past. The script therefore keeps
 `gnatprove`'s own exit status and fails on it, and tees the run to a log because
 `gnatprove.out` carries the summary only and cannot say what was rejected.
 
+The proof also runs `--proof-warnings=on`, which is off by default. It widens
+what there is to be fatal about: a warning derived *by proof* — a dead branch, an
+unreachable precondition, an inconsistent assumption — where flow analysis alone
+finds none of those. It needs no gating logic of its own, because a proof warning
+is a warning and `--warnings=error` already carries it. The tree is at
+1175/1175 proved with the switch on and nothing new reported, so the switch costs
+nothing today; it is on now precisely because that is when adoption is free.
+
+## The compiler bar is `-gnatwa`, and raising it is not free
+
+`-gnatwe` makes warnings fatal without widening *what* is diagnosed. That comes
+from `-gnatwa`, which the Alire development profile already sets, so the gate
+locked in the existing standard rather than raising it.
+
+Raising it was measured, letter by letter, over every `-gnatw` switch not already
+implied by `-gnatwa`. Four fire on this tree:
+
+| switch | sites | what it reports |
+| --- | --- | --- |
+| `-gnatw.y` | 163 | why a package spec needs a body |
+| `-gnatwd` | 86 | implicit dereference |
+| `-gnatwh` | 28 | a declaration hides an outer name |
+| `-gnatw.o`, `-gnatwm` | 2 | out parameter modified, value maybe unreferenced |
+
+None is free, which is the whole argument for adopting a switch while its count
+is zero. The first two are structural rather than defects — `-gnatwd` fires on
+every dereference of the access discriminants the ownership design is built on,
+and `-gnatw.y` is advisory. `-gnatwh` is the one with real value, at the price of
+28 renamings; it is a change to the sources, not to the gate, and belongs to
+whoever wants to make it.
+
+Also worth not rediscovering: `-gnatwa` *does* diagnose unreferenced locals, both
+`is never read and never assigned` and `assigned but never read`. The hole is
+narrower than it looks — a local given an initial value and then never read draws
+nothing, and no `-gnatw` letter changes that.
+
 ## What is proved, and what a client instantiates
 
 The public API is three generics, and GNATprove analyses a generic only through
@@ -148,8 +184,12 @@ minutes late rather than at the root.
 - `json/gnat.adc` — SPARK as the default.
 - `json/json.gpr`, `json/json_prove.gpr`, `tests/json_tests.gpr` — `-gnatwe`.
   `tools/json_tools.gpr` and `tools/readme_example.gpr` inherit it, since both
-  do `package Compiler renames JSON.Compiler`.
-- `scripts/check-proof.sh` — `--warnings=error`, and the exit status that makes
-  it bite.
+  do `package Compiler renames JSON.Compiler`. That rename carries
+  `Local_Configuration_Pragmas` too, so the `tools` sources are compiled against
+  `json/gnat.adc` — including its `pragma SPARK_Mode (On)`, which
+  `tools/src/pretty_print.adb` satisfies. A `gnat.adc` beside
+  `tools/json_tools.gpr` would never be read; there is deliberately no such file.
+- `scripts/check-proof.sh` — `--warnings=error` and `--proof-warnings=on`, and
+  the exit status that makes them bite.
 - `.github/CODEOWNERS` — review routing for all of the above.
 - `CONTRIBUTING.md` — the same rule, for someone who has not read this.

@@ -16,8 +16,13 @@ clean: ## Remove build, proof, doc and coverage artifacts
 	rm -rf json/build tests/build tools/build tests/TEST-*.xml
 	rm -rf docs/api gnatdoc-run.txt
 
+# --proof-warnings=on is off by default in GNATprove and diagnoses by proof what
+# --warnings=error only makes fatal once flow analysis has found it: a dead
+# branch, an unreachable precondition, an inconsistent assumption. Both switches
+# have to agree with scripts/check-proof.sh, which is the gate.
 prove: prove-deps ## Prove the library to SPARK Silver -- AoRTE (--level=2)
-	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 --warnings=error --output=oneline --output-header
+	cd json && $(ALR) exec -- gnatprove -P json_prove.gpr -j0 --level=2 \
+	  --warnings=error --proof-warnings=on --output=oneline --output-header
 
 prove-check: prove-deps ## `prove` as a gate: drift from scripts/proof-xfail.txt => exit 1
 	ALR="$(ALR)" ./scripts/check-proof.sh
@@ -30,8 +35,14 @@ prove-check: prove-deps ## `prove` as a gate: drift from scripts/proof-xfail.txt
 # --stop-after=generation stops before compilation: gnatprove does its own
 # frontend pass over the sources, so the proof needs the config project on disk
 # and nothing compiled or linked. json has no dependencies to sync.
+#
+# No profile flags, for the reason spelled out on docs-deps below: Alire keys a
+# dependency's build directory by build profile, and check-proof.sh drives
+# gnatprove through a bare `alr exec`, which resolves the DEFAULT profile. The
+# two must agree. Nothing to miss while json has no dependencies -- the point is
+# that it stays right when it gains one.
 prove-deps: ## Provision what gnatprove reads (config GPR), no build
-	cd json && $(ALR_BUILD) --stop-after=generation
+	cd json && $(ALR) build --stop-after=generation
 
 check-readme: ## Compile the README example against the library
 	ALR="$(ALR)" ./scripts/check-readme-example.sh
