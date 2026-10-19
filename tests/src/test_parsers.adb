@@ -14,6 +14,8 @@
 --  See the License for the specific language governing permissions and
 --  limitations under the License.
 
+with Ada.Characters.Latin_1;
+
 with AUnit.Assertions;
 with AUnit.Test_Caller;
 
@@ -59,6 +61,8 @@ package body Test_Parsers is
       Test_Suite.Add_Test (Caller.Create
         (Name & "Parse text '""\ud834\udd1e""'",
          Test_Escaped_Unicode_Surrogate_Pair_String_Text'Access));
+      Test_Suite.Add_Test (Caller.Create
+        (Name & "Decode a 16 MiB string value", Test_Large_String_Text'Access));
 
       Test_Suite.Add_Test (Caller.Create
         (Name & "Parse text '42'", Test_Integer_Number_Text'Access));
@@ -328,6 +332,38 @@ package body Test_Parsers is
       Free (Document);
       Parsers.Destroy (Parser);
    end Test_Escaped_Unicode_Surrogate_Pair_String_Text;
+
+   procedure Test_Large_String_Text (Object : in out Test) is
+      type Text_Ptr is access String;
+
+      Length : constant := 16 * 1024 * 1024;
+      --  Twice the 8 MiB main-thread stack of the platforms CI runs on
+
+      Text     : constant Text_Ptr := new String'(1 .. Length + 4 => 'x');
+      Parser   : Parsers.Parser;
+      Document : aliased JSON_Value_Access;
+   begin
+      Text (1) := '"';
+      Text (Length + 1 .. Length + 2) := "\n";
+      Text (Length + 3) := 'y';
+      Text (Length + 4) := '"';
+
+      Parsers.Create (Parser, Text.all);
+      Parsers.Parse (Parser, Document);
+
+      declare
+         Decoded : constant String := Value (Document);
+      begin
+         Assert (Decoded'Length = Length + 1, "Value has the wrong length");
+         Assert (Decoded (Decoded'Last - 2) = 'x'
+                   and Decoded (Decoded'Last - 1) = Ada.Characters.Latin_1.LF
+                   and Decoded (Decoded'Last) = 'y',
+                 "Value has the wrong tail");
+      end;
+
+      Free (Document);
+      Parsers.Destroy (Parser);
+   end Test_Large_String_Text;
 
    procedure Test_Integer_Number_Text (Object : in out Test) is
       Text : constant String := "42";
