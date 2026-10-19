@@ -72,10 +72,6 @@ private
    --  Parse text '"\ud834\udd1e"'
    --  @param Object The fixture the case runs against
 
-   procedure Test_Owned_String_Text (Object : in out Test);
-   --  Owned_Value agrees with Value, with and without escape sequences
-   --  @param Object The fixture the case runs against
-
    procedure Test_Large_String_Text (Object : in out Test);
    --  Decode a string value larger than the default stack
    --  @param Object The fixture the case runs against

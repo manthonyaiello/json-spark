@@ -20,7 +20,6 @@ with AUnit.Assertions;
 with AUnit.Test_Caller;
 
 with JSON.Parsers;
-with JSON.Streams;
 with JSON.Types;
 
 package body Test_Parsers is
@@ -62,8 +61,6 @@ package body Test_Parsers is
       Test_Suite.Add_Test (Caller.Create
         (Name & "Parse text '""\ud834\udd1e""'",
          Test_Escaped_Unicode_Surrogate_Pair_String_Text'Access));
-      Test_Suite.Add_Test (Caller.Create
-        (Name & "Owned_Value agrees with Value", Test_Owned_String_Text'Access));
       Test_Suite.Add_Test (Caller.Create
         (Name & "Decode a 16 MiB string value", Test_Large_String_Text'Access));
 
@@ -336,39 +333,15 @@ package body Test_Parsers is
       Parsers.Destroy (Parser);
    end Test_Escaped_Unicode_Surrogate_Pair_String_Text;
 
-   procedure Test_Owned_String_Text (Object : in out Test) is
-      procedure Check (Text : String; Expected : String) is
-         Parser   : Parsers.Parser;
-         Document : aliased JSON_Value_Access;
-         Owned    : JSON.Streams.Text_Access;
-      begin
-         Parsers.Create (Parser, Text);
-         Parsers.Parse (Parser, Document);
-
-         Owned := Owned_Value (Document);
-         Assert (Owned'First = 1, "Owned value does not start at 1");
-         Assert (Owned.all = Expected, "Owned value not equal to " & Expected);
-         Assert (Owned.all = Value (Document), "Owned value differs from Value");
-
-         JSON.Streams.Free (Owned);
-         Free (Document);
-         Parsers.Destroy (Parser);
-      end Check;
-   begin
-      Check ("""test""", "test");
-      Check ("""""", "");
-      Check ("""a\nb\u00e9""",
-             "a" & Ada.Characters.Latin_1.LF & "b" & Character'Val (16#C3#) & Character'Val (16#A9#));
-   end Test_Owned_String_Text;
-
    procedure Test_Large_String_Text (Object : in out Test) is
+      type Text_Ptr is access String;
+
       Length : constant := 16 * 1024 * 1024;
       --  Twice the 8 MiB main-thread stack of the platforms CI runs on
 
-      Text     : JSON.Streams.Text_Access := new String'(1 .. Length + 4 => 'x');
+      Text     : constant Text_Ptr := new String'(1 .. Length + 4 => 'x');
       Parser   : Parsers.Parser;
       Document : aliased JSON_Value_Access;
-      Owned    : JSON.Streams.Text_Access;
    begin
       Text (1) := '"';
       Text (Length + 1 .. Length + 2) := "\n";
@@ -376,18 +349,18 @@ package body Test_Parsers is
       Text (Length + 4) := '"';
 
       Parsers.Create (Parser, Text.all);
-      JSON.Streams.Free (Text);
       Parsers.Parse (Parser, Document);
 
-      Assert (String'(Value (Document))'Length = Length + 1, "Value has the wrong length");
+      declare
+         Decoded : constant String := Value (Document);
+      begin
+         Assert (Decoded'Length = Length + 1, "Value has the wrong length");
+         Assert (Decoded (Decoded'Last - 2) = 'x'
+                   and Decoded (Decoded'Last - 1) = Ada.Characters.Latin_1.LF
+                   and Decoded (Decoded'Last) = 'y',
+                 "Value has the wrong tail");
+      end;
 
-      Owned := Owned_Value (Document);
-      Assert (Owned'Length = Length + 1, "Owned value has the wrong length");
-      Assert (Owned (Length - 1) = 'x' and Owned (Length) = Ada.Characters.Latin_1.LF
-                and Owned (Owned'Last) = 'y',
-              "Owned value has the wrong tail");
-
-      JSON.Streams.Free (Owned);
       Free (Document);
       Parsers.Destroy (Parser);
    end Test_Large_String_Text;

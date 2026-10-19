@@ -23,14 +23,6 @@ package JSON.Streams with SPARK_Mode => On is
    --  Access type designating a heap-allocated String, used to hold the
    --  text owned by a String_Buffer or a Stream
 
-   procedure Free (Text : in out Text_Access)
-     with Always_Terminates,
-          Post    => Text = null,
-          Depends => (Text => null, null => Text);
-   --  Release a heap-allocated text
-   --  @param Text The text to release; set to null on return (a null text
-   --    is accepted and is a no-op)
-
    -----------------------------------------------------------------------------
    --                              String buffer                              --
    -----------------------------------------------------------------------------

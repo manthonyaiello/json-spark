@@ -220,31 +220,6 @@ package body JSON.Types with SPARK_Mode => On is
    function Value (Object : not null access constant JSON_Value) return String
      is (if Object.Str = null then "" else Unescape (Object.Str.all));
 
-   function Owned_Value (Object : not null access constant JSON_Value)
-     return not null Streams.Text_Access
-   is
-      Buffer : Streams.Text_Access;
-      Last   : Natural;
-   begin
-      if Object.Str = null then
-         return new String'("");
-      end if;
-
-      Buffer := new String'(1 .. Object.Str'Length => ' ');
-      Unescape_Into (Object.Str.all, Buffer.all, Last);
-      if Last = Buffer'Length then
-         return Buffer;
-      end if;
-
-      declare
-         Result : constant not null Streams.Text_Access :=
-           new String'(Buffer (1 .. Last));
-      begin
-         Free_Text (Buffer);
-         return Result;
-      end;
-   end Owned_Value;
-
    function Value (Object : not null access constant JSON_Value) return Integer_Type
      is (Object.Integer_Value);
 
