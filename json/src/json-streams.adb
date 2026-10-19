@@ -22,6 +22,11 @@ package body JSON.Streams with SPARK_Mode => On is
    procedure Free_Text is new Ada.Unchecked_Deallocation
      (Object => String, Name => Text_Access);
 
+   procedure Free (Text : in out Text_Access) is
+   begin
+      Free_Text (Text);
+   end Free;
+
    -----------------------------------------------------------------------------
    --                              String buffer                              --
    -----------------------------------------------------------------------------

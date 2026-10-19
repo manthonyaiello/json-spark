@@ -51,11 +51,14 @@ package body JSON.Types with SPARK_Mode => On is
       return new Constrained_String'(Constrained_String (Value));
    end To_Text;
 
-   function Unescape (Text : String) return String is
+   procedure Unescape_Into
+     (Text : String; Target : in out String; Last : out Natural)
+     with Pre  => Target'First = 1 and then Target'Length = Text'Length,
+          Post => Last <= Target'Length
+   --  Decode the escape sequences of Text into Target (1 .. Last). Target is
+   --  sized by the caller so that no frame here grows with the text.
+   is
       use Ada.Characters.Latin_1;
-
-      Result : String (1 .. Text'Length) := (others => ' ');
-      Last   : Natural := 0;
 
       Skip : Natural := 0;
       --  Number of characters of Text already consumed as part of a
@@ -88,7 +91,8 @@ package body JSON.Types with SPARK_Mode => On is
 
       procedure Append_Code_Point (Code : Natural)
         with Pre  => Code <= 16#10FFFF#
-                       and then Last <= Result'Length - 4,
+                       and then Target'First = 1
+                       and then Last <= Target'Length - 4,
              Post => Last in Last'Old + 1 .. Last'Old + 4
                        and then (if Code <= 16#FFFF# then
                                    Last <= Last'Old + 3)
@@ -96,26 +100,27 @@ package body JSON.Types with SPARK_Mode => On is
       is
       begin
          if Code <= 16#7F# then
-            Result (Last + 1) := Character'Val (Code);
+            Target (Last + 1) := Character'Val (Code);
             Last := Last + 1;
          elsif Code <= 16#7FF# then
-            Result (Last + 1) := Character'Val (16#C0# + Code / 64);
-            Result (Last + 2) := Character'Val (16#80# + Code mod 64);
+            Target (Last + 1) := Character'Val (16#C0# + Code / 64);
+            Target (Last + 2) := Character'Val (16#80# + Code mod 64);
             Last := Last + 2;
          elsif Code <= 16#FFFF# then
-            Result (Last + 1) := Character'Val (16#E0# + Code / 4096);
-            Result (Last + 2) := Character'Val (16#80# + (Code / 64) mod 64);
-            Result (Last + 3) := Character'Val (16#80# + Code mod 64);
+            Target (Last + 1) := Character'Val (16#E0# + Code / 4096);
+            Target (Last + 2) := Character'Val (16#80# + (Code / 64) mod 64);
+            Target (Last + 3) := Character'Val (16#80# + Code mod 64);
             Last := Last + 3;
          else
-            Result (Last + 1) := Character'Val (16#F0# + Code / 262144);
-            Result (Last + 2) := Character'Val (16#80# + (Code / 4096) mod 64);
-            Result (Last + 3) := Character'Val (16#80# + (Code / 64) mod 64);
-            Result (Last + 4) := Character'Val (16#80# + Code mod 64);
+            Target (Last + 1) := Character'Val (16#F0# + Code / 262144);
+            Target (Last + 2) := Character'Val (16#80# + (Code / 4096) mod 64);
+            Target (Last + 3) := Character'Val (16#80# + (Code / 64) mod 64);
+            Target (Last + 4) := Character'Val (16#80# + Code mod 64);
             Last := Last + 4;
          end if;
       end Append_Code_Point;
    begin
+      Last := 0;
       for J in Text'Range loop
          pragma Loop_Invariant (Last <= J - Text'First + Skip);
          pragma Loop_Invariant (Skip <= Text'Last - J + 1);
@@ -156,7 +161,7 @@ package body JSON.Types with SPARK_Mode => On is
                               --  A lone surrogate is not a valid code
                               --  point; the tokenizer rejects it, but
                               --  emit U+FFFD (replacement character)
-                              --  to keep this function total
+                              --  to keep this procedure total
                               Append_Code_Point (16#FFFD#);
                               Skip := 5;
                            else
@@ -168,9 +173,9 @@ package body JSON.Types with SPARK_Mode => On is
                         --  A single-character escape sequence (or a
                         --  malformed \u escape, which the tokenizer
                         --  rejects; the character is copied unchanged
-                        --  to keep this function total)
+                        --  to keep this procedure total)
                         Last := Last + 1;
-                        Result (Last) :=
+                        Target (Last) :=
                           (case E is
                              when 'b'    => BS,
                              when 'f'    => FF,
@@ -183,17 +188,26 @@ package body JSON.Types with SPARK_Mode => On is
                   end;
                elsif C = '\' then
                   --  A trailing \ at the end of the text, which the
-                  --  tokenizer rejects; skip it to keep this function
+                  --  tokenizer rejects; skip it to keep this procedure
                   --  total
                   null;
                else
                   Last := Last + 1;
-                  Result (Last) := C;
+                  Target (Last) := C;
                end if;
             end;
          end if;
       end loop;
-      return Result (1 .. Last);
+   end Unescape_Into;
+
+   function Unescape (Text : String) return String is
+      Buffer : Streams.Text_Access := new String'(1 .. Text'Length => ' ');
+      Last   : Natural;
+   begin
+      Unescape_Into (Text, Buffer.all, Last);
+      return Result : constant String := Buffer (1 .. Last) do
+         Free_Text (Buffer);
+      end return;
    end Unescape;
 
    -----------------------------------------------------------------------------
@@ -205,6 +219,31 @@ package body JSON.Types with SPARK_Mode => On is
 
    function Value (Object : not null access constant JSON_Value) return String
      is (if Object.Str = null then "" else Unescape (Object.Str.all));
+
+   function Owned_Value (Object : not null access constant JSON_Value)
+     return not null Streams.Text_Access
+   is
+      Buffer : Streams.Text_Access;
+      Last   : Natural;
+   begin
+      if Object.Str = null then
+         return new String'("");
+      end if;
+
+      Buffer := new String'(1 .. Object.Str'Length => ' ');
+      Unescape_Into (Object.Str.all, Buffer.all, Last);
+      if Last = Buffer'Length then
+         return Buffer;
+      end if;
+
+      declare
+         Result : constant not null Streams.Text_Access :=
+           new String'(Buffer (1 .. Last));
+      begin
+         Free_Text (Buffer);
+         return Result;
+      end;
+   end Owned_Value;
 
    function Value (Object : not null access constant JSON_Value) return Integer_Type
      is (Object.Integer_Value);

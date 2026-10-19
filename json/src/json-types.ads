@@ -86,6 +86,16 @@ package JSON.Types with SPARK_Mode => On is
    --  @param Object The JSON value, which must be of String_Kind
    --  @return The string value with escape sequences decoded
 
+   function Owned_Value (Object : not null access constant JSON_Value)
+     return not null Streams.Text_Access
+     with Pre  => Kind (Object) = String_Kind,
+          Post => Owned_Value'Result'First = 1;
+   --  Return the string Value returns, in a heap allocation the caller owns,
+   --  so that a string of any length costs no stack proportional to it
+   --  @param Object The JSON value, which must be of String_Kind
+   --  @return The string value with escape sequences decoded; release it
+   --    with Streams.Free
+
    function Value (Object : not null access constant JSON_Value) return Integer_Type
      with Pre => Kind (Object) = Integer_Kind;
    --  Return the integer held by a JSON integer value
